@@ -172,6 +172,10 @@ class EngineConverter : public EngineConverterInterface {
       const commands::Context& context,
       std::vector<ExternalConversionSegment>* evaluated_segments) override;
 
+  size_t InsertExternalSegmentCandidates(
+      absl::Span<const ExternalSegmentCandidate> candidates,
+      absl::string_view description, int position) override;
+
   // Fixes the suggestion candidate. Stores the number of characters in the key
   // of the committed candidate to committed_key_size.
   // For example, assume that "日本語" was suggested as a candidate for "にほ".

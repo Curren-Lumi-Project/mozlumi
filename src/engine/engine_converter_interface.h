@@ -75,6 +75,15 @@ struct ConversionPreferences {
   bool prefer_zipcode_literal_top = false;
 };
 
+// Mozlumi: one AI conversion candidate for a current conversion segment.
+struct ExternalSegmentCandidate {
+  // Index into the current conversion segments.
+  size_t segment_index = 0;
+  // Must be equal to the segment key; otherwise the item is ignored.
+  std::string key;
+  std::string value;
+};
+
 // Class handling ConverterInterface with a session state.  This class
 // support stateful operations related with the converter.
 class EngineConverterInterface {
@@ -308,6 +317,15 @@ class EngineConverterInterface {
       evaluated_segments->clear();
     }
     return false;
+  }
+
+  // Mozlumi: inserts external (AI) candidates into the current conversion
+  // segments at |position|, labeled with |description|.  The visible
+  // selection is kept.  Returns the number of segments that were changed.
+  virtual size_t InsertExternalSegmentCandidates(
+      absl::Span<const ExternalSegmentCandidate> candidates,
+      absl::string_view description, int position) {
+    return 0;
   }
 
   // Fix the suggestion candidate.  True is returned if the selected

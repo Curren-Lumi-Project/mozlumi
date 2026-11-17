@@ -2141,6 +2141,7 @@ bool Session::SendCommand(commands::Command* command) {
     case commands::SessionCommand::GET_STATUS:
     case commands::SessionCommand::APPLY_LIVE_CONVERSION:
     case commands::SessionCommand::APPLY_ZENZ_LIVE_CORRECTION:
+    case commands::SessionCommand::APPLY_AI_CANDIDATES:
     case commands::SessionCommand::RESUME_COMMAND_SEQUENCE:
       break;
     case commands::SessionCommand::CONVERT_REVERSE:
@@ -2262,6 +2263,9 @@ bool Session::SendCommand(commands::Command* command) {
     case commands::SessionCommand::APPLY_ZENZ_LIVE_CORRECTION:
       result = ApplyZenzLiveCorrection(command);
       break;
+    case commands::SessionCommand::APPLY_AI_CANDIDATES:
+      result = ApplyAiCandidates(command);
+      break;
     case commands::SessionCommand::RESUME_COMMAND_SEQUENCE:
       result = ResumeCommandSequence(command);
       break;
@@ -2296,6 +2300,7 @@ bool Session::SendCommand(commands::Command* command) {
       break;
   }
   if (context_->state() != ImeContext::CONVERSION) {
+    ClearAiCandidates();
     live_conversion_active_ = false;
     live_conversion_from_composition_ = false;
     manual_zenz_commit_on_next_input_ = false;
@@ -2464,6 +2469,7 @@ bool Session::SendKey(commands::Command* command) {
   }
 
   if (context_->state() != ImeContext::CONVERSION) {
+    ClearAiCandidates();
     live_conversion_active_ = false;
     live_conversion_from_composition_ = false;
     manual_zenz_commit_on_next_input_ = false;
@@ -7159,6 +7165,8 @@ bool Session::ForceZenzLiveCorrection(
   if (!context_->GetConfig().use_ai_conversion()) {
     return DoNothing(command);
   }
+  // The explicit replacement supersedes a pending AI-candidates request.
+  ClearAiCandidates();
   // Explicit user action. Build a regular Mozc conversion as the baseline,
   // then run the existing asynchronous Zenz validation/adoption pipeline.
   // A manual request must never convert or export a password preedit.
@@ -7641,6 +7649,229 @@ bool Session::OutputCurrentLiveConversionAfterZenzStop(
     command->mutable_output()->set_zenz_live_correction_debug(
         std::string(debug));
   }
+  return true;
+}
+
+void Session::ClearAiCandidates() {
+  pending_ai_candidates_ = PendingAiCandidates();
+}
+
+void Session::AttachAiCandidatesPollCallback(
+    commands::Command* command) const {
+  commands::Output::Callback* callback =
+      command->mutable_output()->mutable_callback();
+  commands::SessionCommand* session_command =
+      callback->mutable_session_command();
+  session_command->set_type(commands::SessionCommand::APPLY_AI_CANDIDATES);
+  session_command->set_live_conversion_generation(
+      pending_ai_candidates_.generation);
+  session_command->set_live_conversion_key(pending_ai_candidates_.key);
+  callback->set_delay_millisec(kDefaultZenzLiveCorrectionPollMsec);
+}
+
+void Session::MaybeScheduleAiCandidates(commands::Command* command) {
+  ClearAiCandidates();
+  const config::Config& config = context_->GetConfig();
+  if (!config.use_ai_conversion() ||
+      context_->state() != ImeContext::CONVERSION ||
+      context_->composer().GetInputFieldType() ==
+          commands::Context::PASSWORD ||
+      !command->output().has_preedit() ||
+      command->output().has_callback()) {
+    return;
+  }
+
+  const std::string key = context_->composer().GetQueryForConversion();
+  std::string unused_key;
+  std::string mozc_value;
+  ExtractPreeditKeyAndValue(command->output().preedit(), &unused_key,
+                            &mozc_value);
+  if (key.empty() || mozc_value.empty()) {
+    return;
+  }
+  const ZenzTextPrivacyDecision key_privacy = EvaluateZenzLiveKeyPrivacy(key);
+  const ZenzTextPrivacyDecision value_privacy =
+      EvaluateZenzLiveValuePrivacy(mozc_value);
+  if (!key_privacy.allow || !value_privacy.allow) {
+    ZenzDebugOutput(absl::StrCat(
+        "[ai-candidates] skip privacy key_reason=", key_privacy.reason,
+        " value_reason=", value_privacy.reason));
+    return;
+  }
+
+  std::vector<ZenzBaselineSegment> baseline_segments =
+      BuildZenzAdoptionBaselineSegments(command->output().preedit(), key,
+                                        mozc_value);
+  if (baseline_segments.empty()) {
+    return;
+  }
+
+  const ZenzClientContextView zenz_client_context =
+      GetZenzClientContextView(context_->client_context());
+  ZenzContextAssemblyInput context_input;
+  context_input.preceding_text = zenz_client_context.preceding_text;
+  context_input.following_text = zenz_client_context.following_text;
+  context_input.left_max_chars = GetZenzLiveCorrectionLeftContextLength(config);
+  context_input.right_max_chars =
+      GetZenzLiveCorrectionRightContextLength(config);
+  const ZenzContextAssemblyResult assembled_context =
+      zenz_context_assembler_.Assemble(context_input);
+
+  ZenzPromptOptions prompt_options;
+  prompt_options.left_context = assembled_context.left.prompt_context;
+  prompt_options.right_context = assembled_context.right.prompt_context;
+  prompt_options.profile = config.zenz_live_correction_profile();
+  prompt_options.topic = config.zenz_live_correction_topic();
+  prompt_options.style = config.zenz_live_correction_style();
+  prompt_options.settings = config.zenz_live_correction_settings();
+  ZenzPromptBuilder prompt_builder;
+
+  ++zenz_live_generation_;
+  ZenzLiveRequest request;
+  request.generation = zenz_live_generation_;
+  request.key = key;
+  request.prompt = prompt_builder.Build(key, prompt_options);
+  request.reading_katakana = prompt_builder.HiraganaToKatakana(key);
+  request.left_context = assembled_context.left.prompt_context;
+  request.mozc_value = mozc_value;
+  request.pipe_name = config.zenz_live_correction_pipe_name();
+  request.timeout_msec = kManualZenzConversionTimeoutMsec;
+  request.max_output_chars = 256;
+  request.issued_at = Clock::GetAbslTime();
+
+  pending_ai_candidates_.pending = true;
+  pending_ai_candidates_.generation = request.generation;
+  pending_ai_candidates_.key = key;
+  pending_ai_candidates_.mozc_value = mozc_value;
+  pending_ai_candidates_.left_context = request.left_context;
+  pending_ai_candidates_.baseline_segments = std::move(baseline_segments);
+  pending_ai_candidates_.issued_at = request.issued_at;
+
+  ZenzDebugOutput(absl::StrCat(
+      "[ai-candidates] submit generation=", request.generation, " ",
+      ZenzRedactedTextStats("key", key), " ",
+      ZenzRedactedTextStats("mozc_value", mozc_value),
+      " segments=", pending_ai_candidates_.baseline_segments.size(),
+      " context_reason=", assembled_context.left.reason));
+
+  EnsureZenzLiveCorrector()->Submit(std::move(request));
+  AttachAiCandidatesPollCallback(command);
+}
+
+bool Session::ApplyAiCandidates(commands::Command* command) {
+  command->mutable_output()->set_consumed(true);
+  const commands::SessionCommand& session_command = command->input().command();
+  const bool current_generation =
+      pending_ai_candidates_.pending &&
+      session_command.live_conversion_generation() ==
+          pending_ai_candidates_.generation;
+  if (!current_generation || context_->state() != ImeContext::CONVERSION ||
+      context_->composer().GetQueryForConversion() !=
+          pending_ai_candidates_.key ||
+      HasVisibleZenzLiveCorrection() || zenz_live_corrector_ == nullptr) {
+    if (current_generation) {
+      ZenzDebugOutput("[ai-candidates] dropped: conversion changed");
+      ClearAiCandidates();
+    }
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  std::optional<ZenzLiveResponse> response =
+      zenz_live_corrector_->TakeResult(pending_ai_candidates_.generation);
+  if (!response.has_value()) {
+    ++pending_ai_candidates_.poll_count;
+    const absl::Duration elapsed =
+        Clock::GetAbslTime() - pending_ai_candidates_.issued_at;
+    Output(command);
+    if (elapsed >= absl::Milliseconds(kZenzLiveCorrectionAsyncWaitMsec)) {
+      ZenzDebugOutput(absl::StrCat(
+          "[ai-candidates] no result reason=timeout generation=",
+          pending_ai_candidates_.generation,
+          " poll_count=", pending_ai_candidates_.poll_count));
+      ClearAiCandidates();
+      return true;
+    }
+    AttachAiCandidatesPollCallback(command);
+    return true;
+  }
+
+  const PendingAiCandidates pending = pending_ai_candidates_;
+  ClearAiCandidates();
+
+  if (!response->ok || response->timeout) {
+    ZenzDebugOutput(absl::StrCat(
+        "[ai-candidates] response not ok timeout=",
+        ZenzBool(response->timeout), " reason=",
+        ZenzSafeDebugReason(response->debug)));
+    Output(command);
+    return true;
+  }
+
+  const ZenzContextPrefixDecision prefix =
+      ZenzOutputValidator::ResolveLeftContextPrefix(
+          response->value, pending.left_context, pending.mozc_value);
+  if (!prefix.safe) {
+    ZenzDebugOutput("[ai-candidates] rejected reason=ambiguous_prefix");
+    Output(command);
+    return true;
+  }
+
+  const config::Config& config = context_->GetConfig();
+  ZenzValidationInput validation_input;
+  validation_input.key = pending.key;
+  validation_input.mozc_value = pending.mozc_value;
+  validation_input.zenz_value = prefix.value;
+  validation_input.left_context = pending.left_context;
+  validation_input.min_key_length = 0;
+  validation_input.allow_synthetic_candidate = true;
+  validation_input.allow_zenz_emoji_changes =
+      config.allow_zenz_emoji_changes();
+  const ZenzValidationResult validation =
+      zenz_output_validator_.Validate(validation_input);
+  if (!validation.accept) {
+    ZenzDebugOutput(absl::StrCat("[ai-candidates] rejected reason=",
+                                 validation.reason, " ",
+                                 ZenzRedactedTextStats("value", prefix.value)));
+    Output(command);
+    return true;
+  }
+
+  const ZenzSegmentProjection projection = ProjectZenzValueToMozcSegments(
+      pending.baseline_segments, pending.key, prefix.value);
+  if (!projection.success) {
+    ZenzDebugOutput("[ai-candidates] rejected reason=projection_failed");
+    Output(command);
+    return true;
+  }
+
+  // A unit with a known boundary is one original segment, in order. An
+  // aggregate with an unknown internal boundary covers baseline_keys.size()
+  // segments and is skipped.
+  std::vector<engine::ExternalSegmentCandidate> candidates;
+  size_t segment_index = 0;
+  size_t aggregates = 0;
+  for (const ZenzProjectedSegment& segment : projection.segments) {
+    if (!segment.boundary_known) {
+      segment_index += std::max<size_t>(1, segment.baseline_keys.size());
+      ++aggregates;
+      continue;
+    }
+    if (segment.changed && !segment.zenz_value.empty()) {
+      candidates.push_back({segment_index, segment.key, segment.zenz_value});
+    }
+    ++segment_index;
+  }
+
+  const size_t inserted =
+      candidates.empty()
+          ? 0
+          : context_->mutable_converter()->InsertExternalSegmentCandidates(
+                candidates, "AI", /*position=*/1);
+  ZenzDebugOutput(absl::StrCat(
+      "[ai-candidates] result changed_segments=", candidates.size(),
+      " inserted=", inserted, " skipped_aggregates=", aggregates, " ",
+      ZenzRedactedTextStats("value", prefix.value)));
+  Output(command);
   return true;
 }
 
@@ -10447,6 +10678,7 @@ bool Session::Convert(commands::Command* command) {
     context_->mutable_converter()->SetCandidateListVisible(true);
   }
   Output(command);
+  MaybeScheduleAiCandidates(command);
   return true;
 }
 

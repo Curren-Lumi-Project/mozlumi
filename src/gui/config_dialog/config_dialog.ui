@@ -1543,7 +1543,7 @@
                      <string>打っている途中や変換中に Option+Tab を押すと、ローカルの AI（Zenz）が前後の文脈をふまえて文全体を変換し直します。もう一度 Option+Tab か Space で元の変換に戻ります。ライブ変換は使いません。</string>
                     </property>
                     <property name="text">
-                     <string>AI変換を使う（Option+Tab で AI 版に差し替え）</string>
+                     <string>AI変換を使う（変換候補に AI の候補を追加・Option+Tab で AI 版に差し替え）</string>
                     </property>
                    </widget>
                   </item>

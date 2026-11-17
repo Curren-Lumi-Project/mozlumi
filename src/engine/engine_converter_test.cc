@@ -1037,6 +1037,76 @@ TEST_F(EngineConverterTest, ConvertToTransliterationWithoutCascadigWindow) {
   }
 }
 
+TEST_F(EngineConverterTest, InsertExternalSegmentCandidates) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  {
+    Segments segments;
+    SetKamaboko(&segments);
+    composer_->InsertCharacterPreedit("かまぼこのいんぼう");
+    FillT13Ns(&segments, composer_.get());
+    EXPECT_CALL(*mock_converter, StartConversion(_, _))
+        .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+  }
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  const std::vector<ExternalSegmentCandidate> candidates = {
+      {0, "かまぼこの", "蒲鉾の"},  // New candidate.
+      {1, "いんぼう", "印房"},      // Already the second candidate.
+      {1, "いんぼ", "印"},          // Key mismatch: ignored.
+      {5, "いんぼう", "陰謀"},      // Out of range: ignored.
+  };
+  EXPECT_EQ(converter.InsertExternalSegmentCandidates(candidates, "AI", 1),
+            2u);
+
+  // The visible conversion is unchanged.
+  {
+    commands::Output output;
+    converter.FillOutput(*composer_, &output);
+    ASSERT_EQ(output.preedit().segment_size(), 2);
+    EXPECT_EQ(output.preedit().segment(0).value(), "かまぼこの");
+    EXPECT_EQ(output.preedit().segment(1).value(), "陰謀");
+  }
+
+  // The AI candidate is the second candidate of the focused segment.
+  converter.CandidateNext(*composer_);
+  {
+    commands::Output output;
+    converter.FillOutput(*composer_, &output);
+    EXPECT_EQ(output.preedit().segment(0).value(), "蒲鉾の");
+    ASSERT_TRUE(output.has_candidate_window());
+    ASSERT_GE(output.candidate_window().candidate_size(), 3);
+    EXPECT_EQ(output.candidate_window().candidate(1).value(), "蒲鉾の");
+    EXPECT_EQ(output.candidate_window().candidate(1).annotation().description(),
+              "AI");
+    EXPECT_EQ(output.candidate_window().candidate(2).value(), "カマボコの");
+  }
+}
+
+TEST_F(EngineConverterTest, InsertExternalSegmentCandidatesKeepsFocus) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  {
+    Segments segments;
+    SetKamaboko(&segments);
+    composer_->InsertCharacterPreedit("かまぼこのいんぼう");
+    FillT13Ns(&segments, composer_.get());
+    EXPECT_CALL(*mock_converter, StartConversion(_, _))
+        .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+  }
+  ASSERT_TRUE(converter.Convert(*composer_));
+  converter.CandidateNext(*composer_);  // Select "カマボコの".
+
+  const std::vector<ExternalSegmentCandidate> candidates = {
+      {0, "かまぼこの", "蒲鉾の"}};
+  EXPECT_EQ(converter.InsertExternalSegmentCandidates(candidates, "AI", 1),
+            1u);
+
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  EXPECT_EQ(output.preedit().segment(0).value(), "カマボコの");
+}
+
 TEST_F(EngineConverterTest, MultiSegmentsConversion) {
   const std::string kKamabokono = "かまぼこの";
   const std::string kInbou = "いんぼう";

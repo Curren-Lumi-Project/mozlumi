@@ -471,6 +471,10 @@ message SessionCommand {
     // Continue an interrupted user keymap macro after a client callback or
     // a bounded timer. Requires command_sequence_generation to reject stales.
     RESUME_COMMAND_SEQUENCE = 31;
+
+    // Mozlumi: polls a pending AI conversion request made after an ordinary
+    // conversion, and adds the AI result to the candidates.
+    APPLY_AI_CANDIDATES = 32;
   }
   required CommandType type = 1;
 

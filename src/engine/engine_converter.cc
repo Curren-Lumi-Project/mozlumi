@@ -1193,6 +1193,96 @@ bool EngineConverter::ReceiveExternalConversionLearningOwnership(
   return true;
 }
 
+size_t EngineConverter::InsertExternalSegmentCandidates(
+    absl::Span<const ExternalSegmentCandidate> candidates,
+    absl::string_view description, int position) {
+  if (!CheckState(CONVERSION) || position < 1) {
+    return 0;
+  }
+  size_t changed = 0;
+  for (const ExternalSegmentCandidate& item : candidates) {
+    if (item.value.empty() ||
+        item.segment_index >= segments_.conversion_segments_size()) {
+      continue;
+    }
+    Segment* segment = segments_.mutable_conversion_segment(item.segment_index);
+    if (segment->key() != item.key || segment->candidates_size() == 0) {
+      continue;
+    }
+
+    int existing = -1;
+    for (size_t i = 0; i < segment->candidates_size(); ++i) {
+      if (segment->candidate(i).value == item.value) {
+        existing = static_cast<int>(i);
+        break;
+      }
+    }
+    if (existing == 0) {
+      // Already the visible top candidate.
+      continue;
+    }
+
+    // Maps an old candidate index to the index after the change.
+    int moved_from = -1;
+    int inserted_at = -1;
+    if (existing > 0) {
+      const int target = std::min(position, existing);
+      if (existing > target) {
+        segment->move_candidate(existing, target);
+        moved_from = existing;
+      }
+      converter::Candidate* candidate = segment->mutable_candidate(target);
+      candidate->description = std::string(description);
+      inserted_at = target;
+    } else {
+      const int target =
+          std::min<int>(position, static_cast<int>(segment->candidates_size()));
+      auto candidate =
+          std::make_unique<converter::Candidate>(segment->candidate(0));
+      candidate->key = item.key;
+      candidate->content_key = item.key;
+      candidate->value = item.value;
+      candidate->content_value = item.value;
+      candidate->inner_segment_boundary = converter::InnerSegmentBoundary();
+      candidate->proper_noun_spans.clear();
+      candidate->attributes &= ~converter::Attribute::BEST_CANDIDATE;
+      candidate->attributes |= converter::Attribute::RERANKED;
+      candidate->description = std::string(description);
+      candidate->a11y_description.clear();
+      candidate->display_value.clear();
+      segment->insert_candidate(target, std::move(candidate));
+      inserted_at = target;
+    }
+
+    const auto remap = [&](int index) {
+      if (index < 0) {
+        return index;  // Transliteration ids are not affected.
+      }
+      if (moved_from >= 0) {
+        if (index == moved_from) return inserted_at;
+        if (index >= inserted_at && index < moved_from) return index + 1;
+        return index;
+      }
+      if (moved_from < 0 && existing < 0 && index >= inserted_at) {
+        return index + 1;
+      }
+      return index;
+    };
+
+    if (item.segment_index < selected_candidate_indices_.size()) {
+      selected_candidate_indices_[item.segment_index] =
+          remap(selected_candidate_indices_[item.segment_index]);
+    }
+    if (item.segment_index == segment_index_) {
+      const int focused_id = remap(candidate_list_.focused_id());
+      UpdateCandidateList();
+      candidate_list_.MoveToId(focused_id);
+    }
+    ++changed;
+  }
+  return changed;
+}
+
 bool EngineConverter::ResolveExternalConversionSegments(
     absl::string_view key, absl::string_view value,
     const commands::Context& context,

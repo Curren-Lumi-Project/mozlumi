@@ -520,6 +520,20 @@ class Session {
   uint32_t zenz_live_generation_ = 0;
   PendingZenzLiveCorrection pending_zenz_live_;
 
+  // Mozlumi: an AI conversion requested after an ordinary conversion. The
+  // result is added to the candidates instead of replacing the conversion.
+  struct PendingAiCandidates {
+    bool pending = false;
+    uint32_t generation = 0;
+    std::string key;
+    std::string mozc_value;
+    std::string left_context;
+    std::vector<ZenzBaselineSegment> baseline_segments;
+    absl::Time issued_at;
+    uint32_t poll_count = 0;
+  };
+  PendingAiCandidates pending_ai_candidates_;
+
   struct PendingZenzFeedback {
     enum class Action {
       kNone,
@@ -827,6 +841,12 @@ class Session {
       mozc::commands::Command* command,
       absl::string_view debug);
   ZenzLiveCorrector* EnsureZenzLiveCorrector();
+
+  // Mozlumi: AI candidates.
+  void MaybeScheduleAiCandidates(commands::Command* command);
+  bool ApplyAiCandidates(commands::Command* command);
+  void AttachAiCandidatesPollCallback(commands::Command* command) const;
+  void ClearAiCandidates();
   bool ApplyZenzLiveCorrectionResult(
       const ZenzLiveResponse& response,
       mozc::commands::Command* command);

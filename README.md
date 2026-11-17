@@ -41,7 +41,9 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 
 #### AI変換（Zenz）
 
-打っている途中や変換中に **Option+Tab** を押すと、ローカルの AI（Zenz）が前後の文脈をふまえて文全体を変換し直します。
+Space で変換すると、ローカルの AI（Zenz）が裏で同じ文を変換し、通常の変換と違う部分があれば「AI」の印付きで 2 番目の候補に加えます。通常の変換結果は変わらないので、AI が外れても入力の邪魔になりません。
+
+打っている途中や変換中に **Option+Tab** を押すと、AI が前後の文脈をふまえて文全体を変換し直します。
 
 - もう一度 Option+Tab を押すか Space を押すと、元の変換に戻ります
 - AI 版を採用したか元に戻したかを記録し、次からの変換に反映します（記録は Mac の中だけに保存されます）
@@ -131,7 +133,9 @@ In an evaluation with synthetic typos of dictionary words (held-out data, bundle
 
 #### AI conversion (Zenz)
 
-While typing or converting, press **Option+Tab** to have the local AI (Zenz) reconvert the whole sentence using the surrounding context.
+When you convert with Space, the local AI (Zenz) converts the same text in the background and, where its result differs, adds it as the second candidate marked "AI". The normal conversion is not changed, so a wrong AI result does not get in your way.
+
+While typing or converting, press **Option+Tab** to have the AI reconvert the whole sentence using the surrounding context.
 
 - Press Option+Tab again or Space to go back to the original conversion
 - Whether you keep or revert the AI result is recorded and used for later conversions (stored only on your Mac)
