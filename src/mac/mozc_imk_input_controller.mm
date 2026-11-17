@@ -514,8 +514,11 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   useLiveConversion_ = config.use_live_conversion();
   useConversionStatusIndicator_ = config.show_conversion_status_indicator();
   // Avoid an extra TEST_SEND_KEY round trip for ordinary Mozc input.
+  // Mozlumi: AI conversion (Option+Tab) also uses the surrounding text. The
+  // preflight runs only when a new composition starts.
   useZenzContextAcquisition_ =
-      useLiveConversion_ && config.use_zenz_live_correction();
+      (useLiveConversion_ && config.use_zenz_live_correction()) ||
+      config.use_ai_conversion();
 
   if (config.use_japanese_layout()) {
     // Apple does not have "Japanese" layout actually -- here sets

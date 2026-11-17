@@ -3571,11 +3571,11 @@ class ConversionStatusPreviewWidget final : public QWidget {
     const double cell_width = (width() - 20.0) / columns;
     const double cell_height = (height() - 12.0) / rows;
     const QString labels[4] = {
-        StatusUiText("Reading", "入力中"), QStringLiteral("Mozc"),
-        StatusUiText("Zenz processing", "Zenz処理中"),
-        StatusUiText("Zenz applied", "Zenz適用済み")};
-    const char* words[4] = {"入力中", "Mozc", "Zenz…", "Zenz"};
-    const char* symbols[4] = {"あ", "M", "…", "Z"};
+        StatusUiText("Reading", "入力中"), QStringLiteral("Mozlumi"),
+        StatusUiText("AI processing", "AI処理中"),
+        StatusUiText("AI applied", "AI適用済み")};
+    const char* words[4] = {"入力中", "Mozlumi", "AI…", "AI"};
+    const char* symbols[4] = {"あ", "M", "…", "AI"};
     const uint32_t colors[4] = {
         style_.reading_color(), style_.mozc_color(),
         style_.zenz_pending_color(), style_.zenz_color()};

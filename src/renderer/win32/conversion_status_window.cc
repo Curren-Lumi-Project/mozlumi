@@ -114,15 +114,15 @@ std::wstring StatusText(ConversionDisplayStatus state,
     switch (state) {
       case ConversionDisplayStatus::kMozc: return L"M";
       case ConversionDisplayStatus::kZenzPending: return L"…";
-      case ConversionDisplayStatus::kZenz: return L"Z";
+      case ConversionDisplayStatus::kZenz: return L"AI";
       case ConversionDisplayStatus::kReading: return L"あ";
       default: return L"";
     }
   }
   switch (state) {
-    case ConversionDisplayStatus::kMozc: return L"Mozc";
-    case ConversionDisplayStatus::kZenzPending: return L"Zenz…";
-    case ConversionDisplayStatus::kZenz: return L"Zenz";
+    case ConversionDisplayStatus::kMozc: return L"Mozlumi";
+    case ConversionDisplayStatus::kZenzPending: return L"AI…";
+    case ConversionDisplayStatus::kZenz: return L"AI";
     case ConversionDisplayStatus::kReading: return L"入力中";
     default: return L"";
   }

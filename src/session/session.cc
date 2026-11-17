@@ -72,6 +72,15 @@
 #include <TargetConditionals.h>  // for TARGET_OS_IPHONE
 #endif                           // __APPLE__
 
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+#include <cstdio>
+#include <fstream>
+#include <mutex>
+
+#include "base/file_util.h"
+#include "base/system_util.h"
+#endif  // defined(__APPLE__) && !TARGET_OS_IPHONE
+
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -130,6 +139,35 @@ void ZenzDebugOutput(absl::string_view message) {
   std::wstring w = Utf8ToWideForZenzDebug(message);
   w.push_back(L'\n');
   ::OutputDebugStringW(w.c_str());
+}
+#elif defined(__APPLE__) && !TARGET_OS_IPHONE
+// Mozlumi: write the Zenz decision trace to
+// ~/Library/Logs/Mozlumi/zenz_debug.log. Messages only carry reasons, counts
+// and context classes (text is reduced to byte/char counts), so the typed
+// text itself is never written. The file is rotated at 1 MiB.
+void ZenzDebugOutput(absl::string_view message) {
+  constexpr std::streamoff kMaxZenzDebugLogBytes = 1 << 20;
+  static std::mutex* const mutex = new std::mutex();
+  std::lock_guard<std::mutex> lock(*mutex);
+  const std::string dir = SystemUtil::GetLoggingDirectory();
+  if (dir.empty()) {
+    return;
+  }
+  const std::string path = FileUtil::JoinPath(dir, "zenz_debug.log");
+  {
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (in && in.tellg() > kMaxZenzDebugLogBytes) {
+      in.close();
+      std::rename(path.c_str(), (path + ".1").c_str());
+    }
+  }
+  std::ofstream out(path, std::ios::app | std::ios::binary);
+  if (!out) {
+    return;
+  }
+  out << absl::FormatTime("%Y-%m-%d %H:%M:%E3S ", absl::Now(),
+                          absl::LocalTimeZone())
+      << message << "\n";
 }
 #else
 void ZenzDebugOutput(absl::string_view) {}
@@ -284,6 +322,10 @@ constexpr uint32_t kMaxZenzLiveCorrectionTimeoutMsec = 1000;
 // ready probing, and then the actual completion request.  Since this path is
 // async, a longer poll window does not block the IME thread.
 constexpr uint32_t kZenzLiveCorrectionAsyncWaitMsec = 3000;
+// Mozlumi: inference deadline for an explicit AI conversion (Option+Tab).
+// The live-conversion default (180ms) is too short for a whole sentence; a
+// manual request may wait longer, but stays within the async wait above.
+constexpr uint32_t kManualZenzConversionTimeoutMsec = 2000;
 
 bool IsLiveConversionTrailingDecorativeSymbol(char32_t c) {
   switch (c) {
@@ -7646,7 +7688,10 @@ bool Session::AdvancePendingZenzLiveCorrection(
     request.left_context = pending_zenz_live_.left_context;
     request.mozc_value = pending_zenz_live_.mozc_value;
     request.pipe_name = config.zenz_live_correction_pipe_name();
-    request.timeout_msec = timeout_msec;
+    request.timeout_msec =
+        pending_zenz_live_.forced
+            ? std::max(timeout_msec, kManualZenzConversionTimeoutMsec)
+            : timeout_msec;
     request.max_output_chars = 256;
     request.issued_at = pending_zenz_live_.issued_at;
 

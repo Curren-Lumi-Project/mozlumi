@@ -43,15 +43,15 @@ NSString* Label(ConversionDisplayStatus status,
     switch (status) {
       case ConversionDisplayStatus::kMozc: return @"M";
       case ConversionDisplayStatus::kZenzPending: return @"…";
-      case ConversionDisplayStatus::kZenz: return @"Z";
+      case ConversionDisplayStatus::kZenz: return @"AI";
       case ConversionDisplayStatus::kReading: return @"あ";
       default: return @"";
     }
   }
   switch (status) {
-    case ConversionDisplayStatus::kMozc: return @"Mozc";
-    case ConversionDisplayStatus::kZenzPending: return @"Zenz…";
-    case ConversionDisplayStatus::kZenz: return @"Zenz";
+    case ConversionDisplayStatus::kMozc: return @"Mozlumi";
+    case ConversionDisplayStatus::kZenzPending: return @"AI…";
+    case ConversionDisplayStatus::kZenz: return @"AI";
     case ConversionDisplayStatus::kReading: return @"入力中";
     default: return @"";
   }
