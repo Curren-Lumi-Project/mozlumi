@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/data/images/icon.svg" width="112" height="112" alt="Mozlumi icon">
+</p>
+
 # Mozlumi
 
 [日本語](#日本語) | [English](#english)
