@@ -22,9 +22,11 @@ ZenzContextRequest GetZenzContextRequest(
     const bool may_snapshot_client_context) {
   ZenzContextRequest request;
 
-  if (!may_snapshot_client_context ||
-      !config.use_live_conversion() ||
-      !config.use_zenz_live_correction() ||
+  // Mozlumi: AI conversion (explicit Zenz correction) also needs context.
+  const bool zenz_enabled =
+      (config.use_live_conversion() && config.use_zenz_live_correction()) ||
+      config.use_ai_conversion();
+  if (!may_snapshot_client_context || !zenz_enabled ||
       input_field_type == commands::Context::PASSWORD) {
     return request;
   }

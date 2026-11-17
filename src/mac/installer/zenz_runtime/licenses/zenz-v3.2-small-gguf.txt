@@ -10,14 +10,19 @@ Original model file:
 Included as:
   models/zenz-v3.2-small-Q5_K_M.gguf
 
+Author:
+  Miwa-Keita
+
 License:
-  Apache License 2.0
+  Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+  https://creativecommons.org/licenses/by-sa/4.0/
+  (as listed on the Hugging Face model page; earlier Mozkey notices listed
+  Apache License 2.0)
 
 Source commit observed:
   c67e03e
 
 Notes:
-  Distributed without modification except for file placement, file naming, and packaging into the macOS PKG installer.
-
-Required license file:
-  Apache-2.0.txt
+  Distributed without modification except for file placement, file naming,
+  and packaging into the macOS PKG installer. No changes were made to the
+  model weights.

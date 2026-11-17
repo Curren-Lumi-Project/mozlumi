@@ -39,6 +39,16 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 
 辞書の語に人工的な打ち間違いを入れた評価（調整に使っていない検証用データ、同梱辞書）では、補正候補 3 件以内に目的の語が入った割合は 94.5%、正しく打っている途中で補正候補が出た割合は 0.8% でした。並び順は簡易的な再現による数値で、実際の表示とは異なる場合があります。
 
+#### AI変換（Zenz）
+
+打っている途中や変換中に **Option+Tab** を押すと、ローカルの AI（Zenz）が前後の文脈をふまえて文全体を変換し直します。
+
+- もう一度 Option+Tab を押すか Space を押すと、元の変換に戻ります
+- AI 版を採用したか元に戻したかを記録し、次からの変換に反映します（記録は Mac の中だけに保存されます）
+- AI はすべて Mac の中で動きます（llama.cpp）。入力内容を外部に送ることはありません
+- 初期設定で有効です。設定画面の「入力補助」タブにある「AI変換」でオン・オフできます
+- AI のモデル（[zenz-v3.2-small-gguf](https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf)、作者 Miwa-Keita）は CC BY-SA 4.0 です
+
 ### 動作環境
 
 - macOS（Apple Silicon / Intel、Universal PKG）で動作を確認しています
@@ -118,6 +128,16 @@ Mozlumi guesses one-keystroke typos in romaji input and adds corrected candidate
 - Enabled by default. It can be turned on or off on the Suggest tab of the settings (the checkbox label is in Japanese: 「ローマ字の打ち間違いを補正する（誤入力補正）」)
 
 In an evaluation with synthetic typos of dictionary words (held-out data, bundled dictionaries), the intended word was among the corrected candidates (up to 3) in 94.5% of cases, and corrections appeared while typing correctly in 0.8% of cases. The ranking was simplified in the evaluation, so actual results may differ.
+
+#### AI conversion (Zenz)
+
+While typing or converting, press **Option+Tab** to have the local AI (Zenz) reconvert the whole sentence using the surrounding context.
+
+- Press Option+Tab again or Space to go back to the original conversion
+- Whether you keep or revert the AI result is recorded and used for later conversions (stored only on your Mac)
+- The AI runs entirely on your Mac (llama.cpp). Input is not sent to external servers
+- Enabled by default. It can be turned on or off under "AI変換" on the Advanced tab (「入力補助」) of the settings
+- The AI model ([zenz-v3.2-small-gguf](https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf) by Miwa-Keita) is licensed under CC BY-SA 4.0
 
 ### Platforms
 

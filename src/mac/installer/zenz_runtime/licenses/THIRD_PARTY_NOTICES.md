@@ -8,11 +8,12 @@ This product includes third-party software and model files.
 - Source: Hugging Face
 - Original model file: ggml-model-Q5_K_M.gguf
 - Included file: models/zenz-v3.2-small-Q5_K_M.gguf
-- License: Apache License 2.0
+- Author: Miwa-Keita
+- License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/ (as listed on the Hugging Face model page; earlier Mozkey notices listed Apache License 2.0)
 - Source repository URL: https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf
 - Source file URL: https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf/blob/main/ggml-model-Q5_K_M.gguf
 - Source commit observed for the model upload: c67e03e
-- Notes: Distributed without modification except for file placement, file naming, and packaging into the macOS PKG installer.
+- Notes: Distributed without modification except for file placement, file naming, and packaging into the macOS PKG installer. The model weights are not modified.
 
 ## llama.cpp / ggml runtime
 

@@ -22,6 +22,7 @@ TEST(ZenzContextRequestTest, DisabledZenzRequestsNothing) {
   config::Config config;
   config.set_use_live_conversion(true);
   config.set_use_zenz_live_correction(false);
+  config.set_use_ai_conversion(false);
 
   const ZenzContextRequest request =
       GetZenzContextRequest(config, commands::Context::NORMAL, true);
@@ -34,12 +35,26 @@ TEST(ZenzContextRequestTest, DisabledLiveConversionRequestsNothing) {
   config::Config config;
   config.set_use_live_conversion(false);
   config.set_use_zenz_live_correction(true);
+  config.set_use_ai_conversion(false);
 
   const ZenzContextRequest request =
       GetZenzContextRequest(config, commands::Context::NORMAL, true);
 
   EXPECT_EQ(request.preceding_length, 0);
   EXPECT_EQ(request.following_length, 0);
+}
+
+// Mozlumi: AI conversion requests context without live conversion.
+TEST(ZenzContextRequestTest, AiConversionRequestsContextWithoutLiveConversion) {
+  config::Config config;
+  config.set_use_live_conversion(false);
+  config.set_use_zenz_live_correction(false);
+  config.set_use_ai_conversion(true);
+
+  const ZenzContextRequest request =
+      GetZenzContextRequest(config, commands::Context::NORMAL, true);
+
+  EXPECT_EQ(request.preceding_length, 24);
 }
 
 TEST(ZenzContextRequestTest, NonSnapshotStateRequestsNothing) {

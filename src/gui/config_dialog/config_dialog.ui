@@ -1538,6 +1538,16 @@
                    <number>4</number>
                   </property>
                   <item>
+                   <widget class="QCheckBox" name="aiConversionCheckBox">
+                    <property name="toolTip">
+                     <string>打っている途中や変換中に Option+Tab を押すと、ローカルの AI（Zenz）が前後の文脈をふまえて文全体を変換し直します。もう一度 Option+Tab か Space で元の変換に戻ります。ライブ変換は使いません。</string>
+                    </property>
+                    <property name="text">
+                     <string>AI変換を使う（Option+Tab で AI 版に差し替え）</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
                    <widget class="QCheckBox" name="zenzLiveCorrectionCheckBox">
                     <property name="toolTip">
                      <string>ライブ変換結果に対して、ローカルの Zenz モデルで文脈補正を行います。</string>

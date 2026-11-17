@@ -753,6 +753,14 @@ message Config {
   // Used by the Windows and macOS fixed-mode renderers.
   optional uint32 ruby_window_fixed_wrap_width_percent = 1056 [default = 90];
 
+  // Mozlumi-specific fields use the 5000+ range so that they never collide
+  // with Mozc (< 1000) or Mozkey (1000+) fields.
+
+  // Mozlumi AI conversion: explicit Zenz correction of the current
+  // composition/conversion (Option+Tab by default) without live conversion.
+  // Also enables surrounding-text acquisition for Zenz.
+  optional bool use_ai_conversion = 5001 [default = true];
+
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;
     WINDOWS_IME_ICON_MONOCHROME_BLACK = 1;

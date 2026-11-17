@@ -127,4 +127,7 @@ Suggestion	Down	PredictAndConvert
 Suggestion	Shift Enter	CommitFirstSuggestion
 ZenzConversion	Space	RevertZenzToMozc
 ZenzConversion	Ctrl Delete	BlockVisibleZenzCorrection
+Composition	Option Tab	ForceZenzLiveCorrection
+Conversion	Option Tab	ForceZenzLiveCorrection
+ZenzConversion	Option Tab	RevertZenzToMozc
 LiveConversion	Backspace	Backspace

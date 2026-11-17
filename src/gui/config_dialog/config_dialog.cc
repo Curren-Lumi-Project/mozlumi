@@ -741,8 +741,10 @@ ConfigDialog::ConfigDialog()
 #endif  // _WIN32
 
   // Mozlumi: live conversion and Zenz (AI) live correction are not offered.
-  // ConfigHandler always turns them off; hide their settings. Zenz will be
-  // offered later as Mozlumi's own "AI candidates" setting.
+  // ConfigHandler always turns them off; hide their settings. Zenz is offered
+  // as Mozlumi's own "AI conversion" (explicit Option+Tab correction); its
+  // condition fields and learning settings stay visible.
+  zenzLiveCorrectionSectionLabel->setText(QStringLiteral("AI変換"));
   for (const char* name : {
            "liveConversionSectionWidget",
            "liveConversionCheckBox",
@@ -752,7 +754,6 @@ ConfigDialog::ConfigDialog()
            "liveConversionMinKeyLengthSpinBox",
            "showLiveConversionRubyWindow",
            "zenzLearningIndependenceNoticeLabel",
-           "zenzLiveCorrectionSectionWidget",
            "zenzLiveCorrectionCheckBox",
            "zenzLiveCorrectionDelayLabel",
            "zenzLiveCorrectionDelaySpinBox",
@@ -761,36 +762,6 @@ ConfigDialog::ConfigDialog()
            "zenzDeferLiveConversionDisplayCheckBox",
            "zenzDeferredPresentationTimeoutLabel",
            "zenzDeferredPresentationTimeoutSpinBox",
-           "zenzConditionFieldsSectionWidget",
-           "zenzAdoptionCriteriaSectionWidget",
-           "zenzStrictReadingPreservationCheckBox",
-           "zenzSuppressEmojiChangesCheckBox",
-           "zenzLiveCorrectionProfileLabel",
-           "zenzLiveCorrectionProfileLineEdit",
-           "zenzLiveCorrectionTopicLabel",
-           "zenzLiveCorrectionTopicLineEdit",
-           "zenzLiveCorrectionStyleLabel",
-           "zenzLiveCorrectionStyleLineEdit",
-           "zenzLiveCorrectionSettingsLabel",
-           "zenzLiveCorrectionSettingsLineEdit",
-           "zenzLiveCorrectionRightContextCheckBox",
-           "zenzLiveCorrectionRightContextLengthLabel",
-           "zenzLiveCorrectionRightContextLengthSpinBox",
-           "zenzFeedbackLearningSectionWidget",
-           "zenzMozcHistoryLearningCheckBox",
-           "zenzFeedbackLearningSubsectionWidget",
-           "zenzFeedbackRecordingCheckBox",
-           "zenzFeedbackReuseCheckBox",
-           "zenzFeedbackAutoBlockCheckBox",
-           "zenzFeedbackAutoBlockRejectThresholdLabel",
-           "zenzFeedbackAutoBlockRejectThresholdSpinBox",
-           "zenzFeedbackAutoBlockMinimumRejectPercentageLabel",
-           "zenzFeedbackAutoBlockMinimumRejectPercentageSpinBox",
-           "zenzFeedbackMinKeyLengthCheckBox",
-           "zenzFeedbackMinKeyLengthLabel",
-           "zenzFeedbackMinKeyLengthSpinBox",
-           "zenzFeedbackDataLabel",
-           "editZenzFeedbackButton",
            "zenzPreeditColorLabel",
            "zenzPreeditTextColorCheckBox",
            "zenzPreeditTextColorButton",
@@ -6226,6 +6197,8 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
                show_live_conversion_ruby_window);
 
   SET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
+  // Mozlumi: AI conversion.
+  SET_CHECKBOX(aiConversionCheckBox, use_ai_conversion);
   SET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);
   // Invert only the UI: the persisted field remains an opt-in for emoji changes.
@@ -6616,6 +6589,8 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
                show_live_conversion_ruby_window);
 
   GET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
+  // Mozlumi: AI conversion.
+  GET_CHECKBOX(aiConversionCheckBox, use_ai_conversion);
   GET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);
   config->set_allow_zenz_emoji_changes(

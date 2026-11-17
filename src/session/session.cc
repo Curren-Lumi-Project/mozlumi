@@ -7113,6 +7113,10 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
 
 bool Session::ForceZenzLiveCorrection(
     commands::Command* command, const bool bypass_automatic_feedback) {
+  // Mozlumi: AI conversion is controlled by its own setting.
+  if (!context_->GetConfig().use_ai_conversion()) {
+    return DoNothing(command);
+  }
   // Explicit user action. Build a regular Mozc conversion as the baseline,
   // then run the existing asynchronous Zenz validation/adoption pipeline.
   // A manual request must never convert or export a password preedit.
