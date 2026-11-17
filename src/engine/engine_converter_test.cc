@@ -1078,6 +1078,8 @@ TEST_F(EngineConverterTest, AddsTypingCorrectionCandidatesOnConversion) {
   EXPECT_CALL(*mock_converter, StartPrediction(_, _))
       .WillOnce(DoAll(SetArgPointee<1>(predicted), Return(true)));
   ASSERT_TRUE(converter.Convert(*composer_));
+  converter.AddTypingCorrectionCandidates(*composer_,
+                                          commands::Context::default_instance());
 
   {
     // The first conversion result is unchanged.

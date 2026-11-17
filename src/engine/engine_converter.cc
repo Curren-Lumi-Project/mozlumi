@@ -314,7 +314,6 @@ bool EngineConverter::Convert(const composer::Composer& composer,
   // propagate the candidate words to TalkBack. Otherwise, the candidate list
   // is not visible on the first conversion.
   candidate_list_visible_ = request_->is_a11y_talkback_enabled();
-  AddTypingCorrectionCandidates(composer, context, preferences);
   UpdateCandidateList();
   InitializeSelectedCandidateIndices();
   return true;
@@ -1198,15 +1197,15 @@ bool EngineConverter::ReceiveExternalConversionLearningOwnership(
 }
 
 void EngineConverter::AddTypingCorrectionCandidates(
-    const composer::Composer& composer, const commands::Context& context,
-    const ConversionPreferences& preferences) {
+    const composer::Composer& composer, const commands::Context& context) {
   // At most this many corrected candidates are added after the top candidate.
   constexpr size_t kMaxCorrections = 3;
   // A corrected reading may differ from the typed one by this many
   // characters (e.g. a missed or an extra mora). Longer predicted words are
   // not what the user typed.
   constexpr size_t kMaxLengthDiff = 2;
-  if (!config_->use_typing_correction() || request_->mixed_conversion() ||
+  if (!CheckState(CONVERSION) || !config_->use_typing_correction() ||
+      request_->mixed_conversion() ||
       segments_.conversion_segments_size() == 0) {
     return;
   }
@@ -1223,7 +1222,8 @@ void EngineConverter::AddTypingCorrectionCandidates(
 
   ConversionRequest::Options options;
   options.request_type = ConversionRequest::PREDICTION;
-  options.enable_user_history_for_conversion = preferences.use_history;
+  options.enable_user_history_for_conversion =
+      conversion_preferences_.use_history;
   // Only the corrected words are used; skip the costly sentence conversion.
   config::Config prediction_config = *config_;
   prediction_config.set_use_realtime_conversion(false);
@@ -1277,6 +1277,13 @@ void EngineConverter::AddTypingCorrectionCandidates(
     }
     top_segment->insert_candidate(position++, std::move(candidate));
     ++added;
+  }
+  if (added > 0 && segment_index_ == 0) {
+    const int focused_id = candidate_list_.focused_id();
+    UpdateCandidateList();
+    candidate_list_.MoveToId(focused_id >= 1
+                                 ? focused_id + static_cast<int>(added)
+                                 : focused_id);
   }
 }
 

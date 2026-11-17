@@ -10680,6 +10680,8 @@ bool Session::Convert(commands::Command* command) {
   // Re-conversion supersedes the hiragana choice implied by an earlier Cancel.
   ClearPendingRerankedPreeditCommitAfterConvertCancel();
   SetSessionState(ImeContext::CONVERSION, context_.get());
+  context_->mutable_converter()->AddTypingCorrectionCandidates(
+      context_->composer(), context_->client_context());
   if (should_show_candidate_window_on_initial_conversion) {
     context_->mutable_converter()->SetCandidateListVisible(true);
   }

@@ -319,6 +319,11 @@ class EngineConverterInterface {
     return false;
   }
 
+  // Mozlumi: after an explicit conversion, adds corrected candidates of a
+  // mistyped romaji reading (誤入力補正) after the top candidate.
+  virtual void AddTypingCorrectionCandidates(
+      const composer::Composer& composer, const commands::Context& context) {}
+
   // Mozlumi: inserts external (AI) candidates into the current conversion
   // segments at |position|, labeled with |description|.  The visible
   // selection is kept.  Returns the number of segments that were changed.
