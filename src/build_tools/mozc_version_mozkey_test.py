@@ -18,6 +18,7 @@ class MozkeyReleaseVersionTest(unittest.TestCase):
         'MOZKEY_RELEASE_VERSION_MAJOR': str(major),
         'MOZKEY_RELEASE_VERSION_MINOR': str(minor),
         'MOZKEY_RELEASE_VERSION_PATCH': str(patch),
+        'MOZLUMI_BUILD': '4',
         'TARGET_PLATFORM': 'Windows',
         'BUILD_OSS': '6153',
         'QT_VERSION': '6.9.1',
@@ -46,6 +47,7 @@ class MozkeyReleaseVersionTest(unittest.TestCase):
             version.GetMozkeyReleaseVersion(), '%d.%d.%d' % (major, minor, patch))
         self.assertEqual(version.GetMozkeyMsiVersion(), expected)
         self.assertEqual(version.GetVersionString(), '3.33.6153.100')
+        self.assertEqual(version.GetVersionInFormat('@MOZLUMI_BUILD@'), '4')
 
   def test_out_of_range_and_invalid(self):
     for major, minor, patch in [

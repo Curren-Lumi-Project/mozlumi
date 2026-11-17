@@ -34,6 +34,7 @@
 #include <memory>
 #include <string>
 
+#include "absl/strings/str_cat.h"
 #include "base/file_util.h"
 #include "base/process.h"
 #include "base/run_level.h"
@@ -98,7 +99,9 @@ AboutDialog::AboutDialog(QWidget *parent)
 #ifdef GOOGLE_JAPANESE_INPUT_BUILD
   const std::string version_info = "(" + Version::GetMozcVersion() + ")";
 #else  // GOOGLE_JAPANESE_INPUT_BUILD
-  const std::string version_info = Version::GetMozkeyReleaseVersion();
+  const std::string version_info = absl::StrCat(
+      Version::GetMozkeyReleaseVersion(), " (Build ",
+      Version::GetMozlumiBuild(), ")");
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
   version_label->setText(QLatin1String(version_info.c_str()));
   GuiUtil::ReplaceWidgetLabels(this);

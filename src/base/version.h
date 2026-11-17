@@ -47,6 +47,9 @@ class Version {
   // Get the user-facing Mozkey release version, such as "v0.7.6".
   static std::string GetMozkeyReleaseVersion();
 
+  // Get the Mozlumi build number (MOZLUMI_BUILD in version.bzl).
+  static int GetMozlumiBuild();
+
 #ifdef _WIN32
   // Get current mozc version (former called MOZC_VERSION) by std::wstring
   static std::wstring GetMozcVersionW();

@@ -52,6 +52,9 @@ inline constexpr const char kMozkeyReleaseVersion[] =
     "@MOZKEY_RELEASE_VERSION_MINOR@."
     "@MOZKEY_RELEASE_VERSION_PATCH@";
 
+// Mozlumi build number (MOZLUMI_BUILD in version.bzl).
+inline constexpr int kMozlumiBuild = @MOZLUMI_BUILD@;
+
 inline constexpr const char kMozcEngineVersion[] = "@ENGINE_VERSION@";
 
 }  // namespace version

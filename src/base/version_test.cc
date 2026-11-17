@@ -51,6 +51,11 @@ TEST(VersionTest, MozkeyReleaseVersionNumberTest) {
                             version::kMozkeyReleaseVersionPatch));
 }
 
+TEST(VersionTest, MozlumiBuildTest) {
+  EXPECT_EQ(Version::GetMozlumiBuild(), version::kMozlumiBuild);
+  EXPECT_GT(Version::GetMozlumiBuild(), 0);
+}
+
 TEST(VersionTest, VersionNumberTest) {
   const int major = Version::GetMozcVersionMajor();
   const int minor = Version::GetMozcVersionMinor();

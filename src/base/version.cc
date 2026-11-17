@@ -61,6 +61,8 @@ std::string Version::GetMozkeyReleaseVersion() {
   return version::kMozkeyReleaseVersion;
 }
 
+int Version::GetMozlumiBuild() { return version::kMozlumiBuild; }
+
 #ifdef _WIN32
 std::wstring Version::GetMozcVersionW() {
   return win32::Utf8ToWide(version::kMozcVersion);
