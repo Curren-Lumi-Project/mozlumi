@@ -48,6 +48,7 @@
 #include "composer/query.h"
 #include "composer/table.h"
 #include "dictionary/dictionary_interface.h"
+#include "prediction/typo_habit_store.h"
 #include "request/conversion_request.h"
 
 namespace mozc {
@@ -58,8 +59,10 @@ class RomanTypoCorrector {
   // Maximum number of corrected queries returned by Correct().
   static constexpr size_t kMaxQueries = 3;
 
-  explicit RomanTypoCorrector(const dictionary::DictionaryInterface& dictionary)
-      : dictionary_(dictionary) {}
+  // `habit_store` may be null (no habit learning).
+  explicit RomanTypoCorrector(const dictionary::DictionaryInterface& dictionary,
+                              TypoHabitStore* habit_store = TypoHabitStore::Get())
+      : dictionary_(dictionary), habit_store_(habit_store) {}
 
   RomanTypoCorrector(const RomanTypoCorrector&) = delete;
   RomanTypoCorrector& operator=(const RomanTypoCorrector&) = delete;
@@ -81,6 +84,7 @@ class RomanTypoCorrector {
                  const ConversionRequest& request) const;
 
   const dictionary::DictionaryInterface& dictionary_;
+  TypoHabitStore* const habit_store_;
   mutable absl::Mutex mutex_;
   mutable composer::TableManager table_manager_ ABSL_GUARDED_BY(mutex_);
 };

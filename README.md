@@ -34,7 +34,10 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 - 対象とする打ち間違い: 隣のキーを押した、隣り合う 2 キーが入れ替わった、余分に押した（二度押しを含む）、1 文字抜けた
 - 補正候補は辞書に実在する読みだけで、最大 3 件です。打ち間違いの起こりやすさと語の使用頻度で並べ、通常の候補より順位を下げて表示します
 - 打った読みがそのまま辞書にある場合や、よく使う語の書きかけと判断した場合は補正しません
-- 動作するのは、ローマ字入力・ひらがなモードのサジェストと予測候補だけです。Space キーでの変換結果は変わりません
+- 動作するのは、ローマ字入力・ひらがなモードです。打っている途中のサジェストと予測候補（Tab）に出ます
+- 打ち間違えたまま Space で変換したときも、2 番目以降の候補に「補正」の印付きで補正候補を並べます（1 番目の変換結果は変わりません）
+- 予測候補（Tab）と Space 変換では、8 文字以上の入力で 1 文字の補正が見つからないとき、2 か所までの打ち間違いも探します（打っている途中のサジェストでは探しません）
+- 補正候補を選んで確定すると、その打ち間違いの種類（例: a のつもりで q を押した）を覚え、次から同じ間違い方の補正を上位に出します。覚えるのは間違い方の種類と回数だけで、打った文章は保存しません
 - 初期設定で有効です。設定画面の「サジェスト」タブにある「ローマ字の打ち間違いを補正する（誤入力補正）」でオン・オフできます
 
 辞書の語に人工的な打ち間違いを入れた評価（調整に使っていない検証用データ、同梱辞書）では、補正候補 3 件以内に目的の語が入った割合は 94.5%、正しく打っている途中で補正候補が出た割合は 0.8% でした。並び順は簡易的な再現による数値で、実際の表示とは異なる場合があります。
@@ -126,7 +129,10 @@ Mozlumi guesses one-keystroke typos in romaji input and adds corrected candidate
 - Covered typos: a neighboring key, two adjacent keys swapped, an extra key (including a doubled key), and a missed key
 - Only readings that exist in the dictionary are used, up to 3. They are ranked by how likely the typo is and how common the word is, and are shown below regular candidates
 - No correction when the typed reading is already a word, or when it looks like the beginning of a common word
-- Works only for suggestions and predictions in romaji input, hiragana mode. Conversion with the Space key is not changed
+- Works in romaji input, hiragana mode, for suggestions while typing and predictions (Tab)
+- When you convert a mistyped reading with Space, corrected candidates marked 「補正」 are added from the second candidate on (the first conversion result is not changed)
+- On predictions (Tab) and Space conversion, typos at two places are also searched for input of 8 or more letters when no one-place correction is found (not on suggestions while typing)
+- When you commit a corrected candidate, the kind of typo (e.g. pressing q for a) is learned, and corrections of the same kind rank higher next time. Only the kinds of typos and their counts are stored, not the text you typed
 - Enabled by default. It can be turned on or off on the Suggest tab of the settings (the checkbox label is in Japanese: 「ローマ字の打ち間違いを補正する（誤入力補正）」)
 
 In an evaluation with synthetic typos of dictionary words (held-out data, bundled dictionaries), the intended word was among the corrected candidates (up to 3) in 94.5% of cases, and corrections appeared while typing correctly in 0.8% of cases. The ranking was simplified in the evaluation, so actual results may differ.

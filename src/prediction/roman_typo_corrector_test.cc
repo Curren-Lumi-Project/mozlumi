@@ -41,6 +41,7 @@
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/dictionary_mock.h"
 #include "dictionary/dictionary_token.h"
+#include "prediction/typo_habit_store.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "request/conversion_request.h"
@@ -176,6 +177,44 @@ TEST_F(RomanTypoCorrectorTest, ReturnsAtMostMaxQueries) {
   RomanTypoCorrector corrector(dictionary_);
   EXPECT_EQ(corrector.Correct(MakeRequest("sunkai")).size(),
             RomanTypoCorrector::kMaxQueries);
+}
+
+TEST_F(RomanTypoCorrectorTest, CorrectsTwoTyposOnlyOnPrediction) {
+  // "kikqnsua": "a" -> "q" and "y" -> "u" (きかんしゃ).
+  ON_CALL(dictionary_, HasKey(absl::string_view("きかんしゃ")))
+      .WillByDefault(Return(true));
+  TypoHabitStore store("");
+  RomanTypoCorrector corrector(dictionary_, &store);
+  EXPECT_TRUE(
+      corrector.Correct(MakeRequest("kikqnsua", ConversionRequest::SUGGESTION))
+          .empty());
+  const std::vector<composer::TypeCorrectedQuery> queries =
+      corrector.Correct(MakeRequest("kikqnsua"));
+  ASSERT_FALSE(queries.empty());
+  EXPECT_EQ(queries[0].correction, "きかんしゃ");
+}
+
+TEST_F(RomanTypoCorrectorTest, LearnedHabitRanksFirst) {
+  // "sunkai" -> "sinkai" (しんかい, vowel typo) is more plausible than
+  // "sunmai" (すんまい, "m" typed as "k") until the latter is learned.
+  ON_CALL(dictionary_, HasKey(absl::string_view("しんかい")))
+      .WillByDefault(Return(true));
+  ON_CALL(dictionary_, HasKey(absl::string_view("すんまい")))
+      .WillByDefault(Return(true));
+  TypoHabitStore store("");
+  RomanTypoCorrector corrector(dictionary_, &store);
+  std::vector<composer::TypeCorrectedQuery> queries =
+      corrector.Correct(MakeRequest("sunkai"));
+  ASSERT_GE(queries.size(), 2);
+  EXPECT_EQ(queries[0].correction, "しんかい");
+
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_TRUE(store.LearnCommitted("sunkai", "すんまい"));
+  }
+  EXPECT_EQ(store.Count("s:mk"), 3);
+  queries = corrector.Correct(MakeRequest("sunkai"));
+  ASSERT_FALSE(queries.empty());
+  EXPECT_EQ(queries[0].correction, "すんまい");
 }
 
 }  // namespace

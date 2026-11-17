@@ -56,6 +56,10 @@ struct RomanTypoCandidate {
   // Smaller is more plausible.
   float cost = 0.0f;
   Operation operation = SUBSTITUTION;
+  // Description of the typo, used to learn the user's typing habits.
+  // "s:<intended><typed>", "t:<typed two keys>", "d:<extra key>",
+  // "i:<missed key>". Two edits are joined with '|'.
+  std::string edit;
 };
 
 // Returns true if `c` is next to `d` on a QWERTY keyboard.
@@ -69,6 +73,15 @@ bool IsQwertyNeighbor(char c, char d);
 // such input is never corrected.
 std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
     std::string_view raw, size_t min_length = 4, size_t max_length = 24);
+
+// Returns candidates that are two keystrokes away from `raw`. The second edit
+// is applied to the `first_k` most plausible one-edit candidates, with the
+// rare missed keys excluded. `extra_cost` is added to every candidate. The
+// result is sorted by cost and truncated to `max_results`. One-edit strings
+// and `raw` itself are not included.
+std::vector<RomanTypoCandidate> GenerateTwoEditRomanTypoCandidates(
+    std::string_view raw, size_t first_k, size_t max_results,
+    float extra_cost, size_t min_length = 4, size_t max_length = 24);
 
 }  // namespace prediction
 }  // namespace mozc

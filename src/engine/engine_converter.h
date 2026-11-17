@@ -172,6 +172,12 @@ class EngineConverter : public EngineConverterInterface {
       const commands::Context& context,
       std::vector<ExternalConversionSegment>* evaluated_segments) override;
 
+  // Mozlumi: typing correction (誤入力補正) on conversion and its learning.
+  void AddTypingCorrectionCandidates(const composer::Composer& composer,
+                                     const commands::Context& context,
+                                     const ConversionPreferences& preferences);
+  void MaybeLearnTypingCorrection(const composer::Composer& composer);
+
   size_t InsertExternalSegmentCandidates(
       absl::Span<const ExternalSegmentCandidate> candidates,
       absl::string_view description, int position) override;

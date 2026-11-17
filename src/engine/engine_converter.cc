@@ -62,6 +62,7 @@
 #include "engine/engine_converter_interface.h"
 #include "engine/engine_output.h"
 #include "protocol/candidate_window.pb.h"
+#include "prediction/typo_habit_store.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "request/conversion_request.h"
@@ -313,6 +314,7 @@ bool EngineConverter::Convert(const composer::Composer& composer,
   // propagate the candidate words to TalkBack. Otherwise, the candidate list
   // is not visible on the first conversion.
   candidate_list_visible_ = request_->is_a11y_talkback_enabled();
+  AddTypingCorrectionCandidates(composer, context, preferences);
   UpdateCandidateList();
   InitializeSelectedCandidateIndices();
   return true;
@@ -927,6 +929,7 @@ void EngineConverter::Commit(const composer::Composer& composer,
     ResetState();
     return;
   }
+  MaybeLearnTypingCorrection(composer);
 
   for (size_t i = 0; i < segments_.conversion_segments_size();
        i += GetSegmentSpan(i)) {
@@ -1194,6 +1197,103 @@ bool EngineConverter::ReceiveExternalConversionLearningOwnership(
   return true;
 }
 
+void EngineConverter::AddTypingCorrectionCandidates(
+    const composer::Composer& composer, const commands::Context& context,
+    const ConversionPreferences& preferences) {
+  // At most this many corrected candidates are added after the top candidate.
+  constexpr size_t kMaxCorrections = 3;
+  // A corrected reading may differ from the typed one by this many
+  // characters (e.g. a missed or an extra mora). Longer predicted words are
+  // not what the user typed.
+  constexpr size_t kMaxLengthDiff = 2;
+  if (!config_->use_typing_correction() || request_->mixed_conversion() ||
+      segments_.conversion_segments_size() == 0) {
+    return;
+  }
+  // Only romaji input typed with the keyboard can be corrected.
+  const std::string raw = composer.GetRawString();
+  if (raw.size() < 4 ||
+      !std::all_of(raw.begin(), raw.end(), [](char c) {
+        return (c >= 'a' && c <= 'z') || c == '-';
+      })) {
+    return;
+  }
+  const std::string key = composer.GetQueryForConversion();
+  const size_t key_len = Util::CharsLen(key);
+
+  ConversionRequest::Options options;
+  options.request_type = ConversionRequest::PREDICTION;
+  options.enable_user_history_for_conversion = preferences.use_history;
+  // Only the corrected words are used; skip the costly sentence conversion.
+  config::Config prediction_config = *config_;
+  prediction_config.set_use_realtime_conversion(false);
+  const ConversionRequest prediction_request =
+      ConversionRequestBuilder()
+          .SetComposer(composer)
+          .SetRequestView(*request_)
+          .SetContextView(context)
+          .SetConfigView(prediction_config)
+          .SetOptions(std::move(options))
+          .Build();
+  Segments predicted;
+  if (!converter_->StartPrediction(prediction_request, &predicted) ||
+      predicted.conversion_segments_size() == 0) {
+    return;
+  }
+
+  Segment* top_segment = segments_.mutable_conversion_segment(0);
+  const uint32_t span = segments_.conversion_segments_size();
+  int position = std::min<int>(1, top_segment->candidates_size());
+  size_t added = 0;
+  const Segment& predicted_segment = predicted.conversion_segment(0);
+  for (size_t i = 0;
+       i < predicted_segment.candidates_size() && added < kMaxCorrections;
+       ++i) {
+    const converter::Candidate& c = predicted_segment.candidate(i);
+    if (!(c.attributes & converter::Attribute::TYPING_CORRECTION)) {
+      continue;
+    }
+    const size_t len = Util::CharsLen(c.key);
+    if (len + kMaxLengthDiff < key_len || len > key_len + kMaxLengthDiff) {
+      continue;
+    }
+    bool duplicated = false;
+    for (size_t j = 0; j < top_segment->candidates_size(); ++j) {
+      const converter::Candidate& existing = top_segment->candidate(j);
+      if (existing.value == c.value &&
+          existing.effective_converted_segment_count() == span) {
+        duplicated = true;
+        break;
+      }
+    }
+    if (duplicated) {
+      continue;
+    }
+    auto candidate = std::make_unique<converter::Candidate>(c);
+    candidate->converted_segment_count = span;
+    candidate->attributes &= ~converter::Attribute::BEST_CANDIDATE;
+    if (candidate->description.empty()) {
+      candidate->description = "補正";
+    }
+    top_segment->insert_candidate(position++, std::move(candidate));
+    ++added;
+  }
+}
+
+void EngineConverter::MaybeLearnTypingCorrection(
+    const composer::Composer& composer) {
+  if (!config_->use_typing_correction() ||
+      segments_.conversion_segments_size() == 0) {
+    return;
+  }
+  const converter::Candidate& candidate = GetSelectedCandidate(0);
+  if (!(candidate.attributes & converter::Attribute::TYPING_CORRECTION)) {
+    return;
+  }
+  prediction::TypoHabitStore::Get()->LearnCommitted(composer.GetRawString(),
+                                                    candidate.key);
+}
+
 size_t EngineConverter::InsertExternalSegmentCandidates(
     absl::Span<const ExternalSegmentCandidate> candidates,
     absl::string_view description, int position) {
@@ -1414,6 +1514,7 @@ bool EngineConverter::CommitSuggestionInternal(
     // just after the committed segment.
     DCHECK_GT(segments_.conversion_segments_size(), 0);
   } else {
+    MaybeLearnTypingCorrection(composer);
     // Not partial suggestion so let's reset the state.
     if (!converter_->CommitSegmentValue(&segments_, 0,
                                         GetCandidateIndexForConverter(0))) {

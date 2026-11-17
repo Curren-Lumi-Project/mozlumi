@@ -101,14 +101,23 @@ constexpr float kRareInsertionCost = 1.3f;
 // corrected).
 constexpr float kFirstCharPenalty = 0.3f;
 
+bool CandidateLess(const RomanTypoCandidate& a, const RomanTypoCandidate& b) {
+  if (a.cost != b.cost) return a.cost < b.cost;
+  return a.romaji < b.romaji;
+}
+
 }  // namespace
 
 bool IsQwertyNeighbor(char c, char d) {
   return GetNeighbors(c).find(d) != std::string_view::npos;
 }
 
-std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
-    std::string_view raw, size_t min_length, size_t max_length) {
+namespace {
+
+std::vector<RomanTypoCandidate> GenerateImpl(std::string_view raw,
+                                             size_t min_length,
+                                             size_t max_length,
+                                             bool rare_insertions) {
   if (raw.size() < min_length || raw.size() > max_length) {
     return {};
   }
@@ -120,7 +129,8 @@ std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
 
   std::unordered_map<std::string, RomanTypoCandidate> best;
   auto add = [&](std::string romaji, float cost,
-                 RomanTypoCandidate::Operation op, size_t pos) {
+                 RomanTypoCandidate::Operation op, size_t pos,
+                 std::string edit) {
     if (romaji.empty() || romaji == raw) {
       return;
     }
@@ -135,6 +145,7 @@ std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
     cand.romaji = romaji;
     cand.cost = cost;
     cand.operation = op;
+    cand.edit = std::move(edit);
     best.insert_or_assign(std::move(romaji), std::move(cand));
   };
 
@@ -148,7 +159,8 @@ std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
       add(std::move(s),
           (IsVowel(base[i]) && IsVowel(n)) ? kVowelSubstitutionCost
                                            : kSubstitutionCost,
-          RomanTypoCandidate::SUBSTITUTION, i);
+          RomanTypoCandidate::SUBSTITUTION, i,
+          std::string("s:") + n + base[i]);
     }
   }
 
@@ -159,7 +171,8 @@ std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
     }
     std::string s = base;
     std::swap(s[i], s[i + 1]);
-    add(std::move(s), kTranspositionCost, RomanTypoCandidate::TRANSPOSITION, i);
+    add(std::move(s), kTranspositionCost, RomanTypoCandidate::TRANSPOSITION, i,
+        std::string("t:") + base[i] + base[i + 1]);
   }
 
   // Deletion of an extra key.
@@ -185,28 +198,32 @@ std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
     }
     std::string s = base;
     s.erase(i, 1);
-    add(std::move(s), cost, RomanTypoCandidate::DELETION, i);
+    add(std::move(s), cost, RomanTypoCandidate::DELETION, i,
+        std::string("d:") + base[i]);
   }
 
   // Insertion of a missed key.
   for (size_t i = 0; i <= base.size(); ++i) {
     for (const char c : kAllChars) {
+      const bool frequent =
+          kFrequentlyDroppedChars.find(c) != std::string_view::npos;
+      if (!frequent && !rare_insertions) {
+        continue;
+      }
       // Invalid romaji produced here is rejected later by the romaji table
       // and the dictionary check.
       std::string s = base;
       s.insert(s.begin() + i, c);
-      add(std::move(s),
-          kFrequentlyDroppedChars.find(c) != std::string_view::npos
-              ? kInsertionCost
-              : kRareInsertionCost,
-          RomanTypoCandidate::INSERTION, i);
+      add(std::move(s), frequent ? kInsertionCost : kRareInsertionCost,
+          RomanTypoCandidate::INSERTION, i, std::string("i:") + c);
     }
     // Missed doubled consonant ("kata" -> "katta").
     if (i < base.size() && IsLowerAlpha(base[i]) && !IsVowel(base[i]) &&
         base[i] != 'n' && (i == 0 || base[i - 1] != base[i])) {
       std::string s = base;
       s.insert(s.begin() + i, base[i]);
-      add(std::move(s), kInsertionCost, RomanTypoCandidate::INSERTION, i);
+      add(std::move(s), kInsertionCost, RomanTypoCandidate::INSERTION, i,
+          std::string("i:") + base[i]);
     }
   }
 
@@ -215,11 +232,59 @@ std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
   for (auto& [unused, cand] : best) {
     results.push_back(std::move(cand));
   }
-  std::sort(results.begin(), results.end(),
-            [](const RomanTypoCandidate& a, const RomanTypoCandidate& b) {
-              if (a.cost != b.cost) return a.cost < b.cost;
-              return a.romaji < b.romaji;
-            });
+  std::sort(results.begin(), results.end(), CandidateLess);
+  return results;
+}
+
+}  // namespace
+
+std::vector<RomanTypoCandidate> GenerateRomanTypoCandidates(
+    std::string_view raw, size_t min_length, size_t max_length) {
+  return GenerateImpl(raw, min_length, max_length, /*rare_insertions=*/true);
+}
+
+std::vector<RomanTypoCandidate> GenerateTwoEditRomanTypoCandidates(
+    std::string_view raw, size_t first_k, size_t max_results,
+    float extra_cost, size_t min_length, size_t max_length) {
+  std::vector<RomanTypoCandidate> first =
+      GenerateImpl(raw, min_length, max_length, /*rare_insertions=*/true);
+  std::unordered_map<std::string, bool> one_edit;
+  for (const RomanTypoCandidate& c : first) {
+    one_edit.emplace(c.romaji, true);
+  }
+  if (first.size() > first_k) {
+    first.resize(first_k);
+  }
+  std::unordered_map<std::string, RomanTypoCandidate> best;
+  for (const RomanTypoCandidate& c1 : first) {
+    for (RomanTypoCandidate& c2 :
+         GenerateImpl(c1.romaji, min_length, max_length + 1,
+                      /*rare_insertions=*/false)) {
+      if (c2.romaji == raw || one_edit.contains(c2.romaji)) {
+        continue;
+      }
+      const float cost = c1.cost + c2.cost + extra_cost;
+      auto it = best.find(c2.romaji);
+      if (it != best.end() && it->second.cost <= cost) {
+        continue;
+      }
+      RomanTypoCandidate cand;
+      cand.romaji = c2.romaji;
+      cand.cost = cost;
+      cand.operation = c1.operation;
+      cand.edit = c1.edit + "|" + c2.edit;
+      best.insert_or_assign(std::move(c2.romaji), std::move(cand));
+    }
+  }
+  std::vector<RomanTypoCandidate> results;
+  results.reserve(best.size());
+  for (auto& [unused, cand] : best) {
+    results.push_back(std::move(cand));
+  }
+  std::sort(results.begin(), results.end(), CandidateLess);
+  if (results.size() > max_results) {
+    results.resize(max_results);
+  }
   return results;
 }
 

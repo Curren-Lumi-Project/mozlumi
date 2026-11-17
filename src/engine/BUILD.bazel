@@ -441,6 +441,7 @@ mozc_cc_library(
         "//composer",
         "//config:config_handler",
         "//converter:attribute",
+        "//prediction:typo_habit_store",
         "//converter:converter_interface",
         "//converter:segments",
         "//protocol:candidate_window_cc_proto",

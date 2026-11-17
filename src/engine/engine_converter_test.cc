@@ -1037,6 +1037,68 @@ TEST_F(EngineConverterTest, ConvertToTransliterationWithoutCascadigWindow) {
   }
 }
 
+TEST_F(EngineConverterTest, AddsTypingCorrectionCandidatesOnConversion) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  composer_->InsertCharacter("sunkai");
+  const std::string key = composer_->GetQueryForConversion();
+
+  Segments segments;
+  {
+    Segment* segment = segments.add_segment();
+    segment->set_key(key);
+    converter::Candidate* candidate = segment->add_candidate();
+    candidate->key = key;
+    candidate->content_key = key;
+    candidate->value = "寸会";
+    candidate->content_value = candidate->value;
+  }
+  Segments predicted;
+  {
+    Segment* segment = predicted.add_segment();
+    segment->set_key(key);
+    auto add = [segment](absl::string_view k, absl::string_view v,
+                         bool typing_correction) {
+      converter::Candidate* c = segment->add_candidate();
+      c->key = std::string(k);
+      c->content_key = c->key;
+      c->value = std::string(v);
+      c->content_value = c->value;
+      if (typing_correction) {
+        c->attributes |= converter::Attribute::TYPING_CORRECTION;
+      }
+    };
+    add(key, "すんかい", false);
+    add("しんかい", "深海", true);
+    // Much longer than what the user typed: not added.
+    add("しんかいたんさせんの", "深海探査船の", true);
+  }
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+  EXPECT_CALL(*mock_converter, StartPrediction(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(predicted), Return(true)));
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  {
+    // The first conversion result is unchanged.
+    commands::Output output;
+    converter.FillOutput(*composer_, &output);
+    EXPECT_EQ(output.preedit().segment(0).value(), "寸会");
+  }
+  converter.CandidateNext(*composer_);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  EXPECT_EQ(output.preedit().segment(0).value(), "深海");
+  ASSERT_TRUE(output.has_candidate_window());
+  EXPECT_EQ(output.candidate_window().candidate(1).value(), "深海");
+  EXPECT_EQ(output.candidate_window().candidate(1).annotation().description(),
+            "補正");
+  for (int i = 0; i < output.candidate_window().candidate_size(); ++i) {
+    EXPECT_NE(output.candidate_window().candidate(i).value(), "すんかい");
+    EXPECT_NE(output.candidate_window().candidate(i).value(), "深海探査船の");
+  }
+}
+
 TEST_F(EngineConverterTest, InsertExternalSegmentCandidates) {
   auto mock_converter = std::make_shared<MockConverter>();
   EngineConverter converter(mock_converter, request_, config_);
