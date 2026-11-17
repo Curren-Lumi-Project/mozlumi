@@ -238,7 +238,7 @@ titles = [
     for node in root.findall("./title")
 ]
 
-if titles != ["Mozkey"]:
+if titles != ["Mozlumi"]:
     raise SystemExit(f"unexpected installer title: {titles}")
 
 host_architectures = [
@@ -266,7 +266,7 @@ if len(architectures) != 2 or set(architectures) != {"arm64", "x86_64"}:
     )
 
 print("Minimum macOS     = 12.0")
-print("Installer title   = Mozkey")
+print("Installer title   = Mozlumi")
 print("hostArchitectures = arm64,x86_64")
 PY
 
@@ -437,7 +437,7 @@ echo "Model / license identity = EXACT"
 echo
 echo "===== VERIFY UNIVERSAL EXECUTABLES ====="
 
-verify_universal "$app_exec" "Mozc"
+verify_universal "$app_exec" "Mozlumi"
 verify_universal "$scorer" "mozc_zenz_scorer"
 verify_universal "$guard" "mozc_zenz_guard"
 verify_universal "$llama" "llama-server"
@@ -610,7 +610,7 @@ echo
 echo "===== WRITE VERIFIER AUDIT ====="
 
 {
-  echo "===== MOZKEY macOS ZENZ FINAL PACKAGE VERIFICATION ====="
+  echo "===== MOZLUMI macOS ZENZ FINAL PACKAGE VERIFICATION ====="
   echo "Timestamp = $(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "Package = $pkg"
   echo "Package SHA256 = $pkg_sha"
@@ -625,7 +625,7 @@ echo "===== WRITE VERIFIER AUDIT ====="
   echo "Final signed scorer SHA256 = $(sha256_file "$scorer")"
   echo "Final signed guard SHA256 = $(sha256_file "$guard")"
   echo "Model SHA256 = $actual_model_sha"
-  echo "Mozc architectures = $(/usr/bin/lipo -archs "$app_exec")"
+  echo "Mozlumi architectures = $(/usr/bin/lipo -archs "$app_exec")"
   echo "Scorer architectures = $(/usr/bin/lipo -archs "$scorer")"
   echo "Guard architectures = $(/usr/bin/lipo -archs "$guard")"
   echo "llama architectures = $(/usr/bin/lipo -archs "$llama")"
@@ -635,7 +635,7 @@ echo "===== WRITE VERIFIER AUDIT ====="
   echo "Distribution                     = PASS"
   echo "Embedded BUILD-CONTRACT          = PASS"
   echo "Model / licenses                 = EXACT"
-  echo "Mozc Universal                   = PASS"
+  echo "Mozlumi Universal                   = PASS"
   echo "mozc_zenz_scorer Universal       = PASS"
   echo "mozc_zenz_guard Universal        = PASS"
   echo "llama-server Universal           = PASS"
@@ -660,7 +660,7 @@ echo "Distribution               = PASS"
 echo "Embedded BUILD-CONTRACT    = PASS"
 echo "Dual-liveness runtime       = SOURCE CONTRACT + MARKER PASS"
 echo "Model / licenses           = EXACT"
-echo "Mozc arches                = $(/usr/bin/lipo -archs "$app_exec")"
+echo "Mozlumi arches                = $(/usr/bin/lipo -archs "$app_exec")"
 echo "Scorer arches              = $(/usr/bin/lipo -archs "$scorer")"
 echo "Guard arches               = $(/usr/bin/lipo -archs "$guard")"
 echo "llama arches               = $(/usr/bin/lipo -archs "$llama")"
