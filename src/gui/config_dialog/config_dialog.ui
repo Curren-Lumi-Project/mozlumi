@@ -2812,6 +2812,16 @@
               </property>
              </widget>
             </item>
+            <item row="5" column="0" colspan="3">
+             <widget class="QCheckBox" name="typingCorrectionCheckBox">
+              <property name="toolTip">
+               <string>ローマ字入力で1打鍵の打ち間違い（隣のキー、入れ替わり、二度押し、打ち漏れ）を推測し、補正した候補をサジェスト・予測候補に加えます。Space キーでの変換結果は変わりません。</string>
+              </property>
+              <property name="text">
+               <string>ローマ字の打ち間違いを補正する（誤入力補正）</string>
+              </property>
+             </widget>
+            </item>
            </layout>
           </widget>
          </item>
@@ -3857,6 +3867,7 @@
   <tabstop>clearUnusedUserPredictionButton</tabstop>
   <tabstop>clearUserPredictionButton</tabstop>
   <tabstop>dictionarySuggestCheckBox</tabstop>
+  <tabstop>typingCorrectionCheckBox</tabstop>
   <tabstop>realtimeConversionCheckBox</tabstop>
   <tabstop>suggestionsSizeSpinBox</tabstop>
   <tabstop>incognitoModeCheckBox</tabstop>

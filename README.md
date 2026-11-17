@@ -8,7 +8,10 @@
 
 Mozlumi は、[Mozkey](https://github.com/koyasi777/mozkey)（[google/mozc](https://github.com/google/mozc) をベースにした非公式フォーク）をさらにフォークした、非公式の日本語入力システムです。Curren-Lumi-Project（かれるみ）が管理しています。Mozkey および Google とは関係ありません。
 
-Mozkey の機能はそのまま引き継いでいます。Mozkey 本体の説明は [docs/README_mozkey.md](docs/README_mozkey.md) を参照してください。
+Mozkey の機能を引き継いでいますが、次の点が異なります。Mozkey 本体の説明は [docs/README_mozkey.md](docs/README_mozkey.md) を参照してください。
+
+- ライブ変換と Zenz（AI）ライブ補正は使いません（常にオフで、設定画面からも外しています）
+- 句読点（「、」「。」など）を打ったときの自動確定は、初期設定でオフです（設定画面でオンにできます）
 
 ### Mozlumi で追加した機能
 
@@ -28,7 +31,7 @@ Mozkey の機能はそのまま引き継いでいます。Mozkey 本体の説明
 - 補正候補は辞書に実在する読みだけで、最大 3 件です。打ち間違いの起こりやすさと語の使用頻度で並べ、通常の候補より順位を下げて表示します
 - 打った読みがそのまま辞書にある場合や、よく使う語の書きかけと判断した場合は補正しません
 - 動作するのは、ローマ字入力・ひらがなモードのサジェストと予測候補だけです。Space キーでの変換結果は変わりません
-- 初期設定で有効です。設定項目 `use_typing_correction` で無効にできます（設定画面の切り替えは未実装）
+- 初期設定で有効です。設定画面の「サジェスト」タブにある「ローマ字の打ち間違いを補正する（誤入力補正）」でオン・オフできます
 
 辞書の語に人工的な打ち間違いを入れた評価（調整に使っていない検証用データ、同梱辞書）では、補正候補 3 件以内に目的の語が入った割合は 94.5%、正しく打っている途中で補正候補が出た割合は 0.8% でした。並び順は簡易的な再現による数値で、実際の表示とは異なる場合があります。
 
@@ -85,7 +88,10 @@ Mozlumi は Mozc・Mozkey と同じく 3-Clause BSD License です（サード�
 
 Mozlumi is an unofficial Japanese input method forked from [Mozkey](https://github.com/koyasi777/mozkey), which is itself an unofficial fork of [google/mozc](https://github.com/google/mozc). It is maintained by Curren-Lumi-Project (Curren Lumi). Mozlumi is not affiliated with Mozkey or Google.
 
-All Mozkey features are kept. For Mozkey itself, see [docs/README_mozkey.md](docs/README_mozkey.md).
+Mozkey features are kept, with these differences. For Mozkey itself, see [docs/README_mozkey.md](docs/README_mozkey.md).
+
+- Live conversion and Zenz (AI) live correction are not used (always off and removed from the settings)
+- Committing on punctuation (such as 、 and 。) is off by default (it can be turned on in the settings)
 
 ### Added in Mozlumi
 
@@ -105,7 +111,7 @@ Mozlumi guesses one-keystroke typos in romaji input and adds corrected candidate
 - Only readings that exist in the dictionary are used, up to 3. They are ranked by how likely the typo is and how common the word is, and are shown below regular candidates
 - No correction when the typed reading is already a word, or when it looks like the beginning of a common word
 - Works only for suggestions and predictions in romaji input, hiragana mode. Conversion with the Space key is not changed
-- Enabled by default. It can be disabled with the `use_typing_correction` config option (no GUI toggle yet)
+- Enabled by default. It can be turned on or off on the Suggest tab of the settings (the checkbox label is in Japanese: 「ローマ字の打ち間違いを補正する（誤入力補正）」)
 
 In an evaluation with synthetic typos of dictionary words (held-out data, bundled dictionaries), the intended word was among the corrected candidates (up to 3) in 94.5% of cases, and corrections appeared while typing correctly in 0.8% of cases. The ranking was simplified in the evaluation, so actual results may differ.
 

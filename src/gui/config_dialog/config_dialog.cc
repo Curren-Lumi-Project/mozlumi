@@ -740,6 +740,70 @@ ConfigDialog::ConfigDialog()
   dictionaryPreloadingAndUACLabel->setVisible(false);
 #endif  // _WIN32
 
+  // Mozlumi: live conversion and Zenz (AI) live correction are not offered.
+  // ConfigHandler always turns them off; hide their settings. Zenz will be
+  // offered later as Mozlumi's own "AI candidates" setting.
+  for (const char* name : {
+           "liveConversionSectionWidget",
+           "liveConversionCheckBox",
+           "liveConversionDelayLabel",
+           "liveConversionDelaySpinBox",
+           "liveConversionMinKeyLengthLabel",
+           "liveConversionMinKeyLengthSpinBox",
+           "showLiveConversionRubyWindow",
+           "zenzLearningIndependenceNoticeLabel",
+           "zenzLiveCorrectionSectionWidget",
+           "zenzLiveCorrectionCheckBox",
+           "zenzLiveCorrectionDelayLabel",
+           "zenzLiveCorrectionDelaySpinBox",
+           "zenzLiveCorrectionMinKeyLengthLabel",
+           "zenzLiveCorrectionMinKeyLengthSpinBox",
+           "zenzDeferLiveConversionDisplayCheckBox",
+           "zenzDeferredPresentationTimeoutLabel",
+           "zenzDeferredPresentationTimeoutSpinBox",
+           "zenzConditionFieldsSectionWidget",
+           "zenzAdoptionCriteriaSectionWidget",
+           "zenzStrictReadingPreservationCheckBox",
+           "zenzSuppressEmojiChangesCheckBox",
+           "zenzLiveCorrectionProfileLabel",
+           "zenzLiveCorrectionProfileLineEdit",
+           "zenzLiveCorrectionTopicLabel",
+           "zenzLiveCorrectionTopicLineEdit",
+           "zenzLiveCorrectionStyleLabel",
+           "zenzLiveCorrectionStyleLineEdit",
+           "zenzLiveCorrectionSettingsLabel",
+           "zenzLiveCorrectionSettingsLineEdit",
+           "zenzLiveCorrectionRightContextCheckBox",
+           "zenzLiveCorrectionRightContextLengthLabel",
+           "zenzLiveCorrectionRightContextLengthSpinBox",
+           "zenzFeedbackLearningSectionWidget",
+           "zenzMozcHistoryLearningCheckBox",
+           "zenzFeedbackLearningSubsectionWidget",
+           "zenzFeedbackRecordingCheckBox",
+           "zenzFeedbackReuseCheckBox",
+           "zenzFeedbackAutoBlockCheckBox",
+           "zenzFeedbackAutoBlockRejectThresholdLabel",
+           "zenzFeedbackAutoBlockRejectThresholdSpinBox",
+           "zenzFeedbackAutoBlockMinimumRejectPercentageLabel",
+           "zenzFeedbackAutoBlockMinimumRejectPercentageSpinBox",
+           "zenzFeedbackMinKeyLengthCheckBox",
+           "zenzFeedbackMinKeyLengthLabel",
+           "zenzFeedbackMinKeyLengthSpinBox",
+           "zenzFeedbackDataLabel",
+           "editZenzFeedbackButton",
+           "zenzPreeditColorLabel",
+           "zenzPreeditTextColorCheckBox",
+           "zenzPreeditTextColorButton",
+           "zenzPreeditBackgroundColorCheckBox",
+           "zenzPreeditBackgroundColorButton",
+           "zenzPreeditUnderlineColorCheckBox",
+           "zenzPreeditUnderlineColorButton",
+       }) {
+    if (QWidget* widget = findChild<QWidget*>(QString::fromLatin1(name))) {
+      widget->hide();
+    }
+  }
+
   GuiUtil::ReplaceWidgetLabels(this);
 
   Reload();
@@ -6476,6 +6540,8 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(historySuggestCheckBox, use_history_suggest);
   SET_CHECKBOX(dictionarySuggestCheckBox, use_dictionary_suggest);
   SET_CHECKBOX(realtimeConversionCheckBox, use_realtime_conversion);
+  // Mozlumi: romaji typing correction.
+  SET_CHECKBOX(typingCorrectionCheckBox, use_typing_correction);
 
   suggestionsSizeSpinBox->setValue(
       std::clamp<int>(config.suggestions_size(), 1, 9));
@@ -6869,6 +6935,8 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(historySuggestCheckBox, use_history_suggest);
   GET_CHECKBOX(dictionarySuggestCheckBox, use_dictionary_suggest);
   GET_CHECKBOX(realtimeConversionCheckBox, use_realtime_conversion);
+  // Mozlumi: romaji typing correction.
+  GET_CHECKBOX(typingCorrectionCheckBox, use_typing_correction);
 
   config->set_suggestions_size(
       static_cast<uint32_t>(suggestionsSizeSpinBox->value()));

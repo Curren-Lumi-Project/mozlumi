@@ -300,21 +300,20 @@ bool MaybeMigrateMozkeyCustomKeymap(Config* config) {
 // newer fields, and "Reset to defaults" all resolve to the same values without
 // overwriting explicit user choices.
 void ApplyMozkeyProductDefaults(Config* config) {
-  if (!config->has_use_live_conversion()) {
-    config->set_use_live_conversion(true);
-  }
+  // Mozlumi: live conversion and Zenz live correction are not offered (the
+  // settings are hidden), so they are always off regardless of stored values.
+  config->set_use_live_conversion(false);
   if (!config->has_show_candidate_window_on_initial_conversion()) {
     config->set_show_candidate_window_on_initial_conversion(true);
   }
   if (!config->has_use_direct_commit()) {
-    config->set_use_direct_commit(true);
+    // Mozlumi: punctuation does not commit by default.
+    config->set_use_direct_commit(false);
   }
   if (!config->has_direct_commit_key()) {
     config->set_direct_commit_key(kMozkeyDefaultDirectCommitKey);
   }
-  if (!config->has_use_zenz_live_correction()) {
-    config->set_use_zenz_live_correction(true);
-  }
+  config->set_use_zenz_live_correction(false);
   if (!config->has_use_zenz_strict_reading_preservation()) {
     config->set_use_zenz_strict_reading_preservation(false);
   }
