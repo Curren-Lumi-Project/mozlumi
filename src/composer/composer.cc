@@ -1356,11 +1356,10 @@ bool Composer::TransformCharactersForNumbers(std::string* query) {
       }
 
       case JA_COMMA: {
-        // "、" should be "，" if the previous character is alphanumerics.
-        // character are both alphanumerics.
-        // Previous char should exist and be a number.
-        const bool lhs_check =
-            (i > 0 && IsAlphabetOrNumber(char_scripts[i - 1]));
+        // "、" should be "，" if the previous character is a number.
+        // Mozlumi: only after numbers (e.g. "1,000"); keep "、" after
+        // alphabets such as "おｋ、".
+        const bool lhs_check = (i > 0 && char_scripts[i - 1] == NUMBER);
         // JA_COMMA should be transformed to COMMA.
         if (lhs_check) {
           CharacterFormManager::GetCharacterFormManager()->ConvertPreeditString(
@@ -1371,11 +1370,10 @@ bool Composer::TransformCharactersForNumbers(std::string* query) {
       }
 
       case JA_PERIOD: {
-        // "。" should be "．" if the previous character and the next
-        // character are both alphanumerics.
-        // Previous char should exist and be a number.
-        const bool lhs_check =
-            (i > 0 && IsAlphabetOrNumber(char_scripts[i - 1]));
+        // "。" should be "．" if the previous character is a number.
+        // Mozlumi: only after numbers (e.g. "3.14"); keep "。" after
+        // alphabets such as "ＯＫ。".
+        const bool lhs_check = (i > 0 && char_scripts[i - 1] == NUMBER);
         // JA_PERIOD should be transformed to PERIOD.
         if (lhs_check) {
           CharacterFormManager::GetCharacterFormManager()->ConvertPreeditString(

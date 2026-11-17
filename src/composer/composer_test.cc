@@ -2000,6 +2000,15 @@ TEST_F(ComposerTest, TransformCharactersForNumbers) {
   query = "１００。";
   EXPECT_TRUE(Composer::TransformCharactersForNumbers(&query));
   EXPECT_EQ(query, "１００．");
+
+  // Mozlumi: punctuation after alphabets is not transformed.
+  query = "おｋ、";
+  EXPECT_FALSE(Composer::TransformCharactersForNumbers(&query));
+  EXPECT_EQ(query, "おｋ、");
+
+  query = "ＯＫ。";
+  EXPECT_FALSE(Composer::TransformCharactersForNumbers(&query));
+  EXPECT_EQ(query, "ＯＫ。");
 }
 
 TEST_F(ComposerTest, PreeditFormAfterCharacterTransform) {
