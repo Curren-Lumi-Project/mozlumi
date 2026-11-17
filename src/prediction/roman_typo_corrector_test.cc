@@ -126,6 +126,26 @@ TEST_F(RomanTypoCorrectorTest, DoesNotCorrectPrefixOfValidWord) {
   EXPECT_TRUE(corrector.Correct(MakeRequest("sunka")).empty());
 }
 
+TEST_F(RomanTypoCorrectorTest, CorrectsPrefixOfOnlyRareWords) {
+  // "すんかい" is only a prefix of a rare word ("スンカイ駅").
+  ON_CALL(dictionary_, HasKey(absl::string_view("しんかい")))
+      .WillByDefault(Return(true));
+  ON_CALL(dictionary_, LookupPredictive(absl::string_view("すんかい"), _, _))
+      .WillByDefault([](absl::string_view key, const ConversionOptions&,
+                        dictionary::DictionaryInterface::Callback* callback) {
+        dictionary::Token token;
+        token.key = "すんかいえき";
+        token.value = "スンカイ駅";
+        token.cost = 8449;
+        callback->OnToken(token.key, token.key, token);
+      });
+  RomanTypoCorrector corrector(dictionary_);
+  const std::vector<composer::TypeCorrectedQuery> queries =
+      corrector.Correct(MakeRequest("sunkai"));
+  ASSERT_FALSE(queries.empty());
+  EXPECT_EQ(queries[0].correction, "しんかい");
+}
+
 TEST_F(RomanTypoCorrectorTest, DoesNotCorrectValidWord) {
   EXPECT_CALL(dictionary_, HasKey(absl::string_view("しんかい")))
       .WillOnce(Return(true));

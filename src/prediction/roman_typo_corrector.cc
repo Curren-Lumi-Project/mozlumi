@@ -72,6 +72,12 @@ constexpr float kFrequencyWeight = 0.3f;
 constexpr int kUnknownCost = 10000;
 // Number of tokens inspected to estimate the cost of a predictive-only key.
 constexpr int kMaxPredictiveTokens = 20;
+// When the input is a prefix of a word whose cost is at most this value, the
+// user is probably still typing that word, so the input is not corrected.
+// Prefixes that only lead to rare words (e.g. "すんかい" -> "スンカイ駅" in
+// the bundled UT dictionary) are still corrected. Tuned on synthetic typos
+// with the bundled dictionaries (5000-8000 performed similarly).
+constexpr int kPrefixSkipMaxCost = 7000;
 // bias = -(kBiasBase + cost * kBiasPerCost). The predictor adds
 // -1150 * bias to wcost, so corrected candidates rank below the literal ones.
 constexpr float kBiasBase = 0.3f;
@@ -177,10 +183,14 @@ std::vector<composer::TypeCorrectedQuery> RomanTypoCorrector::Correct(
   if (HasExactKey(original_key)) {
     return {};
   }
-  // The input is a prefix of a valid word; the user is probably still typing
+  // The input is a prefix of a common word; the user is probably still typing
   // it correctly. Correcting here would add noise on almost every keystroke.
-  if (!ContainsAsciiAlpha(original_key) &&
-      HasPredictiveKey(original_key, request)) {
+  const bool original_has_predictive =
+      !ContainsAsciiAlpha(original_key) &&
+      HasPredictiveKey(original_key, request);
+  if (original_has_predictive &&
+      GetMinCost(original_key, /*exact=*/false, request) <=
+          kPrefixSkipMaxCost) {
     return {};
   }
   const size_t original_pending =
@@ -230,7 +240,7 @@ std::vector<composer::TypeCorrectedQuery> RomanTypoCorrector::Correct(
       const int min_cost = GetMinCost(key, /*exact=*/true, request);
       accepted.push_back({std::move(key), candidate.cost,
                           candidate.cost + kFrequencyWeight * min_cost / 1000});
-    } else if (HasPredictiveKey(key, request)) {
+    } else if (!original_has_predictive && HasPredictiveKey(key, request)) {
       const float cost = candidate.cost + kPredictiveOnlyCost;
       const int min_cost = GetMinCost(key, /*exact=*/false, request);
       accepted.push_back(
