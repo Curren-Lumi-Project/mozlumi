@@ -2,7 +2,7 @@
   <img src="src/data/images/icon.svg" width="112" height="112" alt="Mozlumi icon">
 </p>
 
-# Mozlumi
+# Mozlumi（もずるみ）
 
 [日本語](#日本語) | [English](#english)
 
@@ -10,7 +10,7 @@
 
 ## 日本語
 
-Mozlumi は、[Mozkey](https://github.com/koyasi777/mozkey)（[google/mozc](https://github.com/google/mozc) をベースにした非公式フォーク）をさらにフォークした、非公式の日本語入力システムです。Curren-Lumi-Project（かれるみ）が管理しています。Mozkey および Google とは関係ありません。
+Mozlumi（もずるみ）は、[Mozkey](https://github.com/koyasi777/mozkey)（[google/mozc](https://github.com/google/mozc) をベースにした非公式フォーク）をさらにフォークした、非公式の日本語入力システムです。Curren-Lumi-Project（かれるみ）が管理しています。Mozkey および Google とは関係ありません。
 
 Mozkey の機能を引き継いでいますが、次の点が異なります。Mozkey 本体の説明は [docs/README_mozkey.md](docs/README_mozkey.md) を参照してください。
 
