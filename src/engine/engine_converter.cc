@@ -44,6 +44,7 @@
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "base/strings/japanese.h"
@@ -1218,7 +1219,15 @@ size_t EngineConverter::InsertExternalSegmentCandidates(
       }
     }
     if (existing == 0) {
-      // Already the visible top candidate.
+      // The external result agrees with the top candidate: only label it.
+      converter::Candidate* top = segment->mutable_candidate(0);
+      if (!absl::StrContains(top->description, description)) {
+        top->description = top->description.empty()
+                               ? std::string(description)
+                               : absl::StrCat(top->description, " ",
+                                              description);
+      }
+      ++changed;
       continue;
     }
 

@@ -7828,7 +7828,10 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
       config.allow_zenz_emoji_changes();
   const ZenzValidationResult validation =
       zenz_output_validator_.Validate(validation_input);
-  if (!validation.accept) {
+  // The same answer as normal Mozc is not an error: the top candidates are
+  // labeled so that the user can see the AI agreed.
+  const bool agrees_with_mozc = prefix.value == pending.mozc_value;
+  if (!validation.accept && !agrees_with_mozc) {
     ZenzDebugOutput(absl::StrCat("[ai-candidates] rejected reason=",
                                  validation.reason, " ",
                                  ZenzRedactedTextStats("value", prefix.value)));
@@ -7856,7 +7859,9 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
       ++aggregates;
       continue;
     }
-    if (segment.changed && !segment.zenz_value.empty()) {
+    // A changed segment is added as a candidate; an unchanged one labels the
+    // existing top candidate.
+    if (!segment.zenz_value.empty()) {
       candidates.push_back({segment_index, segment.key, segment.zenz_value});
     }
     ++segment_index;
@@ -7868,8 +7873,9 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
           : context_->mutable_converter()->InsertExternalSegmentCandidates(
                 candidates, "AI", /*position=*/1);
   ZenzDebugOutput(absl::StrCat(
-      "[ai-candidates] result changed_segments=", candidates.size(),
-      " inserted=", inserted, " skipped_aggregates=", aggregates, " ",
+      "[ai-candidates] result agrees=", ZenzBool(agrees_with_mozc),
+      " segments=", candidates.size(), " applied=", inserted,
+      " skipped_aggregates=", aggregates, " ",
       ZenzRedactedTextStats("value", prefix.value)));
   Output(command);
   return true;

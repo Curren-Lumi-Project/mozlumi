@@ -1083,6 +1083,39 @@ TEST_F(EngineConverterTest, InsertExternalSegmentCandidates) {
   }
 }
 
+TEST_F(EngineConverterTest, InsertExternalSegmentCandidatesLabelsAgreement) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  {
+    Segments segments;
+    SetKamaboko(&segments);
+    composer_->InsertCharacterPreedit("かまぼこのいんぼう");
+    FillT13Ns(&segments, composer_.get());
+    EXPECT_CALL(*mock_converter, StartConversion(_, _))
+        .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+  }
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  // Same answer as the top candidate: no new candidate, only a label.
+  const std::vector<ExternalSegmentCandidate> candidates = {
+      {0, "かまぼこの", "かまぼこの"}};
+  EXPECT_EQ(converter.InsertExternalSegmentCandidates(candidates, "AI", 1),
+            1u);
+  // Labeling twice does not duplicate the label.
+  EXPECT_EQ(converter.InsertExternalSegmentCandidates(candidates, "AI", 1),
+            1u);
+
+  converter.CandidateNext(*composer_);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  EXPECT_EQ(output.preedit().segment(0).value(), "カマボコの");
+  ASSERT_TRUE(output.has_candidate_window());
+  EXPECT_EQ(output.candidate_window().candidate(0).value(), "かまぼこの");
+  EXPECT_EQ(output.candidate_window().candidate(0).annotation().description(),
+            "AI");
+  EXPECT_EQ(output.candidate_window().candidate(1).value(), "カマボコの");
+}
+
 TEST_F(EngineConverterTest, InsertExternalSegmentCandidatesKeepsFocus) {
   auto mock_converter = std::make_shared<MockConverter>();
   EngineConverter converter(mock_converter, request_, config_);
