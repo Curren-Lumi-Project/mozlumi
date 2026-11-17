@@ -17,6 +17,8 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 - ライブ変換と Zenz（AI）ライブ補正は使いません（常にオフで、設定画面からも外しています）
 - 句読点（「、」「。」など）を打ったときの自動確定は、初期設定でオフです（設定画面でオンにできます）
 
+> **外部との通信について**: Mozlumi が外部と通信するのは、アップデートの確認とダウンロード（GitHub）のときだけです。AI変換を含め、変換はすべて Mac の中で行い、入力した文字・変換結果・学習データを外部に送ることはありません。
+
 ### Mozlumi で追加した機能
 
 #### ローマ字の誤入力補正
@@ -72,7 +74,7 @@ Space で変換すると、ローカルの AI（Zenz）が裏で同じ文を変�
 - 新しい版があるかを 1 日 1 回 GitHub に確認し、あれば知らせます。「更新する」を選ぶと、PKG をダウンロードして SHA-256 を確かめ、管理者のパスワードを入力するだけで入れ替えます（ログアウトは不要です）
 - 入力メニューの「アップデートを確認...」からいつでも確認できます
 - 毎日の確認は、設定の「プライバシー」タブの「Mozlumi のアップデートを1日1回確認する」で止められます
-- 通信するのはアップデートの確認とダウンロードのときだけで、入力処理（変換・AI変換）は外部と通信しません
+- 通信するのはアップデートの確認とダウンロードのときだけで、入力処理（変換・AI変換）は外部と通信しません。確認のときも、入力内容や学習データは送りません
 
 ### ビルド（macOS）
 
@@ -118,6 +120,8 @@ Mozkey features are kept, with these differences. For Mozkey itself, see [docs/R
 
 - Live conversion and Zenz (AI) live correction are not used (always off and removed from the settings)
 - Committing on punctuation (such as 、 and 。) is off by default (it can be turned on in the settings)
+
+> **Network access**: Mozlumi uses the network only to check for and download updates (GitHub). All conversion, including AI conversion, runs on your Mac; what you type, the conversion results and the learning data are never sent anywhere.
 
 ### Added in Mozlumi
 
@@ -174,7 +178,7 @@ Download `Mozlumi_v…_macos_universal.pkg` from [Releases](https://github.com/C
 - Once a day, Mozlumi checks GitHub for a new version and lets you know. If you choose to update, it downloads the PKG, verifies its SHA-256, and replaces Mozlumi after you enter an administrator password (no logout needed)
 - You can also check at any time from "Check for Updates..." in the input menu
 - The daily check can be turned off on the Privacy tab of the settings (the checkbox label is in Japanese: 「Mozlumi のアップデートを1日1回確認する」)
-- Only the update check and download use the network; input processing (conversion and AI conversion) never does
+- Only the update check and download use the network; input processing (conversion and AI conversion) never does. The update check does not send what you type or any learning data
 
 ### Build (macOS)
 
