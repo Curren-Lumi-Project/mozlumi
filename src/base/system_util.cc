@@ -329,7 +329,8 @@ std::string UserProfileDirectoryImpl::GetUserProfileDirectory() const {
     ::mkdir(dir.c_str(), 0755);
     return FileUtil::JoinPath(dir, "JapaneseInput");
 #else   //  GOOGLE_JAPANESE_INPUT_BUILD
-    return FileUtil::JoinPath(dir, "Mozc");
+    // Mozlumi: separate profile from Mozc/Mozkey (no automatic migration).
+    return FileUtil::JoinPath(dir, kMozlumiMacAppName);
 #endif  //  GOOGLE_JAPANESE_INPUT_BUILD
 
 #elif defined(__linux__)

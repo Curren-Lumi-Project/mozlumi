@@ -46,11 +46,12 @@ static NSString *kLaunchdPlistFiles[] = {
     @"/Library/LaunchAgents/com.google.inputmethod.Japanese.Renderer.plist", nil};
 static NSString *const kSourceID = @"com.google.inputmethod.Japanese";
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
-static const unsigned char kInstalledLocation[] = "/Library/Input Methods/Mozc.app";
+// Mozlumi: must match config.bzl (MACOS_APP_NAME / MACOS_BUNDLE_ID_PREFIX).
+static const unsigned char kInstalledLocation[] = "/Library/Input Methods/Mozlumi.app";
 static NSString *kLaunchdPlistFiles[] = {
-    @"/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist",
-    @"/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Renderer.plist", nil};
-static NSString *const kSourceID = @"org.mozc.inputmethod.Japanese";
+    @"/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist",
+    @"/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist", nil};
+static NSString *const kSourceID = @"blog.curren-lumi.inputmethod.Mozlumi";
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
 // Load the installed Google Japanese Input to the system.

@@ -158,7 +158,7 @@ def wait_child(ppid, exe, seconds=15, parent_proc=None):
 
 
 def ensure_absent_namespace():
-    directory = Path("/tmp/mozc_zenz_" + str(os.geteuid()))
+    directory = Path("/tmp/mozlumi_zenz_" + str(os.geteuid()))
     need(not os.path.lexists(directory),
          "EXISTING_ZENZ_NAMESPACE_REFUSE_TO_TOUCH " + str(directory))
     return directory
@@ -242,7 +242,7 @@ def verify_package(pkg, expected_sha, parent):
     need(sha256(pkg) == expected_sha, "PKG_SHA256_MISMATCH")
     expanded = parent / "expanded"
     run(["/usr/sbin/pkgutil", "--expand-full", str(pkg), str(expanded)], timeout=180)
-    found = list(expanded.rglob("Mozc.app"))
+    found = list(expanded.rglob("Mozlumi.app"))
     need(len(found) == 1 and found[0].is_dir(), "EXPECTED_ONE_MOZC_APP")
     runtime = found[0] / "Contents/Resources/ZenzRuntime"
     for name in ("mozc_zenz_scorer", "mozc_zenz_guard", "llama-server", "models/" + MODEL_NAME):

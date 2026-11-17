@@ -64,7 +64,8 @@ def main():
   args = ParseArguments()
 
   if args.oss:
-    identifier = 'org.mozc.pkg.JapaneseInput'
+    # Mozlumi: must match MACOS_PKG_ID in config.bzl and distribution.xml.
+    identifier = 'blog.curren-lumi.pkg.Mozlumi'
     pkg_name = 'Mozc.pkg'
     if not args.version_file:
       raise ValueError('--version_file is required for Mozkey OSS packages')
@@ -99,7 +100,7 @@ def main():
       component['BundleOverwriteAction'] = ''
       if args.oss:
         # Keep Mozkey's OSS input method at its canonical installation path.
-        # Bundle-ID-based relocation can select another copy of Mozc.app.
+        # Bundle-ID-based relocation can select another copy of Mozlumi.app.
         component['BundleIsRelocatable'] = False
         # Mozc 3.x -> Mozkey 0.x is a version-number transition.
         # Otherwise PackageKit skips both app bundles even on a successful pkg.

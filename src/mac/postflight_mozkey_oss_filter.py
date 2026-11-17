@@ -23,6 +23,13 @@ KEEP_LINES = (
     b"/usr/bin/sudo -u $CONSOLE_USER /usr/bin/killall mozc_zenz_scorer > /dev/null 2>&1\n",
     b"/usr/bin/sudo -u $CONSOLE_USER /usr/bin/killall Mozc > /dev/null\n",
 )
+# Mozlumi: the generic process-name killall lines would also stop processes of
+# an installed Mozc/Mozkey (same executable names). Replace them with a single
+# stop limited to processes running from the Mozlumi bundle.
+MOZLUMI_STOP_LINE = (
+    b"/usr/bin/sudo -u $CONSOLE_USER /usr/bin/pkill -f "
+    b"'^/Library/Input Methods/Mozlumi\\.app/' > /dev/null 2>&1\n"
+)
 TAIL_MARKER = b"# Mozkey OSS-only postinstall tail."
 
 
@@ -42,7 +49,18 @@ def transform(base: bytes, tail: bytes) -> bytes:
         raise ValueError("UNEXPECTED_OSS_CLEANUP_TAIL_FORMAT")
     # Detect additional llama-server kills using other syntax instead of
     # silently declaring the postinstall safe.
-    result = b"".join(line for line in lines if line != UNSAFE_LINE) + tail
+    filtered = []
+    for line in lines:
+        if line == UNSAFE_LINE:
+            continue
+        if line in KEEP_LINES:
+            if MOZLUMI_STOP_LINE not in filtered:
+                filtered.append(MOZLUMI_STOP_LINE)
+            continue
+        filtered.append(line)
+    result = b"".join(filtered) + tail
+    if re.search(rb"(?m)^[^\n#]*killall[ \t]+Mozc", result):
+        raise ValueError("GENERIC_MOZC_KILLALL_REMAINS")
     if re.search(rb"(?m)^[^\n#]*(?:killall|pkill)[ \t]+[^\n]*\bllama-server\b", result):
         raise ValueError("UNSAFE_LLAMA_SERVER_STOP_REMAINS")
     if result.count(TAIL_MARKER) != 1:

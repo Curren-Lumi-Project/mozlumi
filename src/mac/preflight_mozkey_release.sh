@@ -1,18 +1,18 @@
 #!/bin/sh
-# Mozkey OSS installable preflight. Selected only by explicit release build flag.
+# Mozlumi (Mozkey-based) OSS installable preflight. Selected only by explicit release build flag.
 # No removal of app, bundles, dictionaries, input sources or preferences.
 set -eu
 PATH='/usr/bin:/bin:/usr/sbin:/sbin'
 export PATH
 
 _mozkey_target='@@@MOZKEY_INSTALL_VERSION@@@'
-_mozkey_pkg_id='org.mozc.pkg.JapaneseInput'
-_mozkey_bundle_id='org.mozc.inputmethod.Japanese'
-_mozkey_app='/Library/Input Methods/Mozc.app'
-_mozkey_uninstaller='/Applications/Mozc/UninstallMozc.app'
+_mozkey_pkg_id='blog.curren-lumi.pkg.Mozlumi'
+_mozkey_bundle_id='blog.curren-lumi.inputmethod.Mozlumi'
+_mozkey_app='/Library/Input Methods/Mozlumi.app'
+_mozkey_uninstaller='/Applications/Mozlumi/UninstallMozlumi.app'
 
 _mozkey_fail() {
-  echo "Mozkey preinstall: BLOCKED: $*" >&2
+  echo "Mozlumi preinstall: BLOCKED: $*" >&2
   exit 1
 }
 
@@ -50,7 +50,7 @@ _mozkey_valid_pkg_version "$_mozkey_target" || _mozkey_fail 'invalid embedded ta
 
 # Reject unexpected filesystem objects and symlink redirection, before even a
 # read of the installed app's plist as the root-running installer.
-for _mozkey_parent in '/Library' '/Library/Input Methods' '/Library/LaunchAgents' '/Applications' '/Applications/Mozc'; do
+for _mozkey_parent in '/Library' '/Library/Input Methods' '/Library/LaunchAgents' '/Applications' '/Applications/Mozlumi'; do
   if [ -L "$_mozkey_parent" ]; then
     _mozkey_fail "unexpected symlink: $_mozkey_parent"
   fi
@@ -95,10 +95,10 @@ if [ ! -d "$_mozkey_app" ]; then
   # leaves the package receipt.  A valid receipt alone must not make a fresh
   # installation impossible.  Fail closed if any installed payload remains.
   [ ! -e "$_mozkey_uninstaller" ] || _mozkey_fail 'uninstaller exists without the main app'
-  [ ! -e '/Applications/Mozc' ] || _mozkey_fail 'applications directory remains without the main app'
+  [ ! -e '/Applications/Mozlumi' ] || _mozkey_fail 'applications directory remains without the main app'
   for _mozkey_agent in \
-    '/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist' \
-    '/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Renderer.plist'; do
+    '/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist' \
+    '/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist'; do
     if [ -e "$_mozkey_agent" ] || [ -L "$_mozkey_agent" ]; then
       _mozkey_fail "launch agent remains without the main app: $_mozkey_agent"
     fi
@@ -108,14 +108,14 @@ if [ ! -d "$_mozkey_app" ]; then
     # version/downgrade policy above still applies.  Do not call --forget:
     # Installer will update the receipt after successful installation.
     printf '%s\n' "$_mozkey_receipt_info" | /usr/bin/awk '
-      /^package-id: / { ids++; if ($2 != "org.mozc.pkg.JapaneseInput" || NF != 2) bad=1 }
+      /^package-id: / { ids++; if ($2 != "blog.curren-lumi.pkg.Mozlumi" || NF != 2) bad=1 }
       /^volume: / { volumes++; if ($2 != "/" || NF != 2) bad=1 }
       /^location: / { locations++; if ($2 != "/" || NF != 2) bad=1 }
       END { if (ids != 1 || volumes != 1 || locations != 1 || bad) exit 1 }
     ' || _mozkey_fail 'unexpected orphan receipt identity, volume or location'
-    echo "Mozkey preinstall: ALLOW installation over verified orphan receipt $_mozkey_receipt -> $_mozkey_target"
+    echo "Mozlumi preinstall: ALLOW installation over verified orphan receipt $_mozkey_receipt -> $_mozkey_target"
   else
-    echo "Mozkey preinstall: ALLOW clean installation of $_mozkey_target"
+    echo "Mozlumi preinstall: ALLOW clean installation of $_mozkey_target"
   fi
   exit 0
 fi
@@ -125,7 +125,7 @@ _mozkey_plist="$_mozkey_app/Contents/Info.plist"
 _mozkey_current_id=$(_mozkey_read_plist "$_mozkey_plist" CFBundleIdentifier) || _mozkey_fail 'cannot read bundle ID'
 [ "$_mozkey_current_id" = "$_mozkey_bundle_id" ] || _mozkey_fail "unexpected bundle identifier: $_mozkey_current_id"
 _mozkey_current_executable=$(_mozkey_read_plist "$_mozkey_plist" CFBundleExecutable) || _mozkey_fail 'cannot read bundle executable'
-[ "$_mozkey_current_executable" = 'Mozc' ] || _mozkey_fail 'unexpected bundle executable name'
+[ "$_mozkey_current_executable" = 'Mozlumi' ] || _mozkey_fail 'unexpected bundle executable name'
 _mozkey_current_short=$(_mozkey_read_plist "$_mozkey_plist" CFBundleShortVersionString) || _mozkey_fail 'cannot read current short version'
 _mozkey_current_build=$(_mozkey_read_plist "$_mozkey_plist" CFBundleVersion) || _mozkey_fail 'cannot read current build version'
 
@@ -135,11 +135,11 @@ if [ -d "$_mozkey_uninstaller" ]; then
     _mozkey_fail 'uninstaller Info.plist missing or a symlink'
   _mozkey_uninstaller_id=$(_mozkey_read_plist "$_mozkey_uninstaller_plist" CFBundleIdentifier) || \
     _mozkey_fail 'cannot read uninstaller bundle ID'
-  [ "$_mozkey_uninstaller_id" = 'org.mozc.inputmethod.Japanese.UninstallMozc' ] || \
+  [ "$_mozkey_uninstaller_id" = 'blog.curren-lumi.inputmethod.Mozlumi.UninstallMozlumi' ] || \
     _mozkey_fail 'unexpected uninstaller bundle ID'
   _mozkey_uninstaller_executable=$(_mozkey_read_plist "$_mozkey_uninstaller_plist" CFBundleExecutable) || \
     _mozkey_fail 'cannot read uninstaller executable'
-  [ "$_mozkey_uninstaller_executable" = 'UninstallMozc' ] || _mozkey_fail 'unexpected uninstaller executable name'
+  [ "$_mozkey_uninstaller_executable" = 'UninstallMozlumi' ] || _mozkey_fail 'unexpected uninstaller executable name'
 fi
 
 # The original Mozc -> Mozkey numbering transition has a known, audited
@@ -148,7 +148,7 @@ if [ "$_mozkey_current_short" = '3.33.6153' ] && \
    { [ "$_mozkey_current_build" = '3.33.6153.101' ] || \
      [ "$_mozkey_current_build" = '3.33.6153' ]; }; then
   [ -n "$_mozkey_receipt" ] || _mozkey_fail 'legacy app without a recognized package receipt'
-  echo "Mozkey preinstall: ALLOW audited legacy Mozc 3.33.6153 migration to $_mozkey_target"
+  echo "Mozlumi preinstall: ALLOW audited legacy Mozc 3.33.6153 migration to $_mozkey_target"
   exit 0
 fi
 
@@ -158,10 +158,10 @@ _mozkey_derived_short=$(printf '%s\n' "$_mozkey_current_build" | /usr/bin/awk -F
 [ "$_mozkey_current_short" = "$_mozkey_derived_short" ] || \
   _mozkey_fail 'installed application short/build versions disagree'
 [ -n "$_mozkey_receipt" ] && [ "$_mozkey_receipt" != 0 ] || \
-  _mozkey_fail 'Mozkey app exists without a current-format package receipt'
+  _mozkey_fail 'Mozlumi app exists without a current-format package receipt'
 _mozkey_not_newer "$_mozkey_current_build" "$_mozkey_target" || \
   _mozkey_fail "downgrade refused (app $_mozkey_current_build > package $_mozkey_target)"
 
 
-echo "Mozkey preinstall: ALLOW same-path version $_mozkey_current_build -> $_mozkey_target"
+echo "Mozlumi preinstall: ALLOW same-path version $_mozkey_current_build -> $_mozkey_target"
 exit 0

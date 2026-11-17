@@ -41,6 +41,12 @@ inline constexpr char kProductNameInEnglish[] = "Mozc";
 
 inline constexpr char kVersionRewriterVersionPrefix[] = kProductPrefix "-";
 
+// Mozlumi: macOS identity. Kept separate from Mozc/Mozkey so that Mozlumi can
+// be installed side by side with them. Must match MACOS_APP_NAME and
+// MACOS_BUNDLE_ID_PREFIX in config.bzl.
+#define kMozlumiMacAppName "Mozlumi"
+#define kMozlumiMacBundleIdPrefix "blog.curren-lumi.inputmethod.Mozlumi"
+
 #if defined(_WIN32)
 // Safe length of IME name in terms of IME_ESC_IME_NAME request.
 // See http://msdn.microsoft.com/en-us/library/dd318166.aspx for details.

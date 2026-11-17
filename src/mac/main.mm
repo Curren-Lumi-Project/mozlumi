@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
   }
   DLOG(INFO) << mozc::kProductNameInEnglish << " initialized";
 
-  NSString *rendererConnectionName = @kProductPrefix "_Renderer_Connection";
+  NSString *rendererConnectionName = @kMozlumiMacAppName "_Renderer_Connection";
   RendererReceiver *rendererReceiver =
       [[RendererReceiver alloc] initWithName:rendererConnectionName];
   [MozcImkInputController setGlobalRendererReceiver:rendererReceiver];

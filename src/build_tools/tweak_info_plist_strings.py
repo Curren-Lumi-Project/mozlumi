@@ -83,10 +83,10 @@ def main():
         }
   else:
     variables = {
-        'CF_BUNDLE_NAME_EN': 'Mozkey',
-        'CF_BUNDLE_NAME_JA': 'Mozkey',
+        'CF_BUNDLE_NAME_EN': 'Mozlumi',
+        'CF_BUNDLE_NAME_JA': 'Mozlumi',
         'NS_HUMAN_READABLE_COPYRIGHT': copyright_message,
-        'INPUT_MODE_ANNOTATION': 'Mozkey',
+        'INPUT_MODE_ANNOTATION': 'Mozlumi',
         }
 
   codecs.open(options.output, 'w', encoding='utf-8').write(

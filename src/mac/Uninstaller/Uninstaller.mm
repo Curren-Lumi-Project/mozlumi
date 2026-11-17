@@ -81,9 +81,10 @@ bool DeleteFiles(const AuthorizationRef &auth) {
       "/Applications/GoogleJapaneseInput.localized", nullptr};
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
   const char *kRemovePaths[] = {
-      "/Library/Input Methods/Mozc.app",
-      "/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist",
-      "/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Renderer.plist", "/Applications/Mozc",
+      // Mozlumi: must match config.bzl (MACOS_APP_NAME / MACOS_BUNDLE_ID_PREFIX).
+      "/Library/Input Methods/Mozlumi.app",
+      "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist",
+      "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist", "/Applications/Mozlumi",
       nullptr};
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
   for (int i = 0; kRemovePaths[i] != nullptr; ++i) {

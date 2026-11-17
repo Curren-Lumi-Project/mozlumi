@@ -42,7 +42,8 @@ Mozkey の機能はそのまま引き継いでいます。Mozkey 本体の説明
 現在、ビルド済みのパッケージは配布していません。ソースからビルドしてください。
 
 - PKG は未署名です。初回は「システム設定」→「プライバシーとセキュリティ」から「このまま開く」で開いてください
-- バンドル ID は Mozkey と同じです。インストールすると、インストール済みの Mozkey と置き換わります
+- Mozkey・Mozc とは別のアプリとしてインストールされます（`/Library/Input Methods/Mozlumi.app`）。Mozkey と並べて使えます
+- 学習データ・設定は Mozkey とは別に保存されます（`~/Library/Application Support/Mozlumi`）。Mozkey からの引き継ぎはありません
 
 ### ビルド（macOS）
 
@@ -118,7 +119,8 @@ In an evaluation with synthetic typos of dictionary words (held-out data, bundle
 No prebuilt packages are distributed at the moment. Please build from source.
 
 - The PKG is not signed. On first launch, open it from System Settings → Privacy & Security → Open Anyway
-- The bundle ID is the same as Mozkey. Installing Mozlumi replaces an installed Mozkey
+- Mozlumi is installed as a separate app from Mozkey and Mozc (`/Library/Input Methods/Mozlumi.app`), so it can be used side by side with Mozkey
+- Learning data and settings are stored separately from Mozkey (`~/Library/Application Support/Mozlumi`). Nothing is migrated from Mozkey
 
 ### Build (macOS)
 

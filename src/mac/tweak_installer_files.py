@@ -112,12 +112,14 @@ def SymlinkQtFrameworks(app_dir: str) -> None:
 
 def TweakQtApps(top_dir: str, oss: bool) -> None:
   """Tweak the resource files for the Qt applications."""
-  name = 'Mozc' if oss else 'GoogleJapaneseInput'
+  # Mozlumi: the main app is Mozlumi.app; nested apps keep the Mozc prefix.
+  name = 'Mozlumi' if oss else 'GoogleJapaneseInput'
+  prefix = 'Mozc' if oss else 'GoogleJapaneseInput'
   sub_qt_apps = [
       'AboutDialog',
       'DictionaryTool',
       'ErrorMessageDialog',
-      f'{name}Prelauncher',
+      f'{prefix}Prelauncher',
       'WordRegisterDialog',
   ]
   for app in sub_qt_apps:
@@ -142,8 +144,9 @@ def TweakForProductbuild(
 
   if oss:
     is_dev_channel = False
-    name = 'Mozc'
-    folder = 'Mozc'
+    # Mozlumi: /Library/Input Methods/Mozlumi.app and /Applications/Mozlumi.
+    name = 'Mozlumi'
+    folder = 'Mozlumi'
   else:
     is_dev_channel = channel == 'dev'
     name = 'GoogleJapaneseInput'
@@ -191,8 +194,8 @@ def TweakForProductbuild(
 
   if tweak_qt:
     resources_dir = f'/Library/Input Methods/{name}.app/Contents/Resources/'
-    # /Applications/Mozc/ConfigDialog.app is a symlink to
-    # /Library/Input Method/Mozc.app/Contents/Resources/ConfigDialog.app
+    # /Applications/Mozlumi/ConfigDialog.app is a symlink to
+    # /Library/Input Methods/Mozlumi.app/Contents/Resources/ConfigDialog.app
     os.symlink(
         resources_dir + 'ConfigDialog.app/',
         f'root/Applications/{folder}/ConfigDialog.app',

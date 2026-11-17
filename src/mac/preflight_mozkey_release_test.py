@@ -21,8 +21,8 @@ import tempfile
 MAC_DIR = Path(__file__).resolve().parent
 SOURCE_PATH = MAC_DIR / "preflight_mozkey_release.sh"
 VERSION_PATH = MAC_DIR.parent / "version.bzl"
-PKG_ID = "org.mozc.pkg.JapaneseInput"
-APP_ID = "org.mozc.inputmethod.Japanese"
+PKG_ID = "blog.curren-lumi.pkg.Mozlumi"
+APP_ID = "blog.curren-lumi.inputmethod.Mozlumi"
 
 
 def release_version() -> tuple[int, int, int]:
@@ -60,7 +60,7 @@ case "$1" in
     /bin/cat "$MOCK_DATA/receipt.txt" ;;
   --pkgs)
     if [ "$MOCK_RECEIPT_MODE" = 'error' ]; then exit 1; fi
-    if [ "$MOCK_RECEIPT_MODE" = 'unreadable' ]; then printf '%s\n' 'org.mozc.pkg.JapaneseInput'; fi ;;
+    if [ "$MOCK_RECEIPT_MODE" = 'unreadable' ]; then printf '%s\n' 'blog.curren-lumi.pkg.Mozlumi'; fi ;;
   *) exit 91 ;;
 esac
 '''
@@ -68,11 +68,11 @@ PLISTBUDDY = r'''#!/bin/sh
 case "$2" in
   'Print :CFBundleIdentifier')
     case "$3" in
-      */UninstallMozc.app/*) echo 'org.mozc.inputmethod.Japanese.UninstallMozc' ;;
-      *) echo "${MOCK_APP_BUNDLE_ID:-org.mozc.inputmethod.Japanese}" ;;
+      */UninstallMozlumi.app/*) echo 'blog.curren-lumi.inputmethod.Mozlumi.UninstallMozlumi' ;;
+      *) echo "${MOCK_APP_BUNDLE_ID:-blog.curren-lumi.inputmethod.Mozlumi}" ;;
     esac ;;
   'Print :CFBundleExecutable')
-    case "$3" in */UninstallMozc.app/*) echo 'UninstallMozc';; *) echo 'Mozc';; esac ;;
+    case "$3" in */UninstallMozlumi.app/*) echo 'UninstallMozlumi';; *) echo 'Mozlumi';; esac ;;
   'Print :CFBundleShortVersionString') echo "$MOCK_APP_SHORT" ;;
   'Print :CFBundleVersion') echo "$MOCK_APP_VERSION" ;;
   *) exit 1 ;;
@@ -114,7 +114,7 @@ def test_cases(target: str, old: str, new: str) -> list[tuple[str, str, dict, bo
         ("orphan_unreadable_receipt_listed", "unreadable", {}, False, "package receipt exists but cannot be read"),
         ("orphan_receipt_enumeration_error", "error", {}, False, "cannot enumerate package receipts"),
         ("existing_app_same_version", "present", {"app": True, "uninstaller": True}, True, "same-path version"),
-        ("existing_app_without_receipt", "none", {"app": True}, False, "Mozkey app exists without"),
+        ("existing_app_without_receipt", "none", {"app": True}, False, "Mozlumi app exists without"),
         ("existing_app_newer_than_package", "present", {"app": True, "app_version": new, "app_short": f"{int(new.split('.')[0]) - 100}.{new.split('.')[1]}.{new.split('.')[2]}"}, False, "downgrade refused"),
         ("existing_app_old_against_new_receipt", "present", {"app": True, "app_version": old, "app_short": f"{int(old.split('.')[0]) - 100}.{old.split('.')[1]}.{old.split('.')[2]}"}, True, "same-path version"),
         ("existing_app_bundle_id_invalid", "present", {"app": True, "app_bundle_id": "org.example.unexpected"}, False, "unexpected bundle identifier"),
@@ -126,11 +126,11 @@ def test_cases(target: str, old: str, new: str) -> list[tuple[str, str, dict, bo
 def transform(source: str, fixture: Path, pkgutil: Path, plistbuddy: Path, target: str) -> str:
     script = source.replace("@@@MOZKEY_INSTALL_VERSION@@@", target)
     paths = [
-        "/Library/Input Methods/Mozc.app",
-        "/Applications/Mozc/UninstallMozc.app",
-        "/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist",
-        "/Library/LaunchAgents/org.mozc.inputmethod.Japanese.Renderer.plist",
-        "/Library/Input Methods", "/Library/LaunchAgents", "/Applications/Mozc",
+        "/Library/Input Methods/Mozlumi.app",
+        "/Applications/Mozlumi/UninstallMozlumi.app",
+        "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist",
+        "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist",
+        "/Library/Input Methods", "/Library/LaunchAgents", "/Applications/Mozlumi",
         "/Library", "/Applications",
     ]
     for path in paths:
@@ -145,8 +145,8 @@ def transform(source: str, fixture: Path, pkgutil: Path, plistbuddy: Path, targe
         if real not in script:
             raise AssertionError(f"Missing expected tool invocation: {real}")
         script = script.replace(real, mock)
-    for forbidden in ("_mozkey_app='/Library/Input Methods/Mozc.app'",
-                      "'/Applications/Mozc'", "/usr/sbin/pkgutil", "/usr/libexec/PlistBuddy"):
+    for forbidden in ("_mozkey_app='/Library/Input Methods/Mozlumi.app'",
+                      "'/Applications/Mozlumi'", "/usr/sbin/pkgutil", "/usr/libexec/PlistBuddy"):
         if forbidden in script:
             raise AssertionError(f"Unsafe original fixture token remains: {forbidden}")
     if "@@@MOZKEY_INSTALL_VERSION@@@" in script:
@@ -170,21 +170,21 @@ def run_case(source: str, root: Path, name: str, mode: str, config: dict,
     data.mkdir()
     (data / "receipt.txt").write_text(make_receipt(config.get("receipt_version", target), config), encoding="utf-8")
     if config.get("app"):
-        app = case / "Library/Input Methods/Mozc.app/Contents"
+        app = case / "Library/Input Methods/Mozlumi.app/Contents"
         app.mkdir(parents=True)
         (app / "Info.plist").write_text("fixture only", encoding="utf-8")
     if config.get("app_dir") or config.get("uninstaller"):
-        (case / "Applications/Mozc").mkdir()
+        (case / "Applications/Mozlumi").mkdir()
     if config.get("uninstaller"):
-        uninstaller = case / "Applications/Mozc/UninstallMozc.app/Contents"
+        uninstaller = case / "Applications/Mozlumi/UninstallMozlumi.app/Contents"
         uninstaller.mkdir(parents=True)
         (uninstaller / "Info.plist").write_text("fixture only", encoding="utf-8")
     for key, suffix in (("converter", "Converter"), ("renderer", "Renderer")):
-        path = case / f"Library/LaunchAgents/org.mozc.inputmethod.Japanese.{suffix}.plist"
+        path = case / f"Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.{suffix}.plist"
         if config.get(key):
             path.write_text("fixture", encoding="utf-8")
     if config.get("converter_symlink"):
-        (case / "Library/LaunchAgents/org.mozc.inputmethod.Japanese.Converter.plist").symlink_to(case / "does-not-exist")
+        (case / "Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist").symlink_to(case / "does-not-exist")
     script = case / "preinstall_fixture.sh"
     script.write_text(transform(source, case, pkgutil, plistbuddy, config.get("pkg_target", target)), encoding="utf-8")
     script.chmod(0o700)

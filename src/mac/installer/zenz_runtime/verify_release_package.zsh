@@ -196,14 +196,14 @@ distribution_candidates=(
 distribution="${distribution_candidates[1]}"
 
 app_candidates=(
-  "$expanded"/**/Mozc.app(N/)
+  "$expanded"/**/Mozlumi.app(N/)
 )
 
 (( ${#app_candidates[@]} == 1 )) ||
-  die "Expected exactly one Mozc.app"
+  die "Expected exactly one Mozlumi.app"
 
 app="${app_candidates[1]%/}"
-app_exec="$app/Contents/MacOS/Mozc"
+app_exec="$app/Contents/MacOS/Mozlumi"
 runtime="$app/Contents/Resources/ZenzRuntime"
 llama="$runtime/llama-server"
 scorer="$runtime/mozc_zenz_scorer"
@@ -213,7 +213,7 @@ contract="$runtime/BUILD-CONTRACT.txt"
 license_dir="$runtime/licenses"
 
 echo "Distribution = $distribution"
-echo "Mozc.app     = $app"
+echo "Mozlumi.app  = $app"
 echo "ZenzRuntime  = $runtime"
 
 echo

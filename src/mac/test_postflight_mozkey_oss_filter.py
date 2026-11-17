@@ -29,8 +29,11 @@ class PostflightSafetyTest(unittest.TestCase):
         self.assertNotIn(filter_script.UNSAFE_LINE, output)
         self.assertTrue(output.startswith(b'#!/bin/sh\n'))
         self.assertEqual(output.count(filter_script.TAIL_MARKER), 1)
+        # Mozlumi: generic Mozc process-name killall lines are replaced by a
+        # single stop limited to the Mozlumi bundle.
         for line in filter_script.KEEP_LINES:
-            self.assertEqual(output.count(line), 1)
+            self.assertEqual(output.count(line), 0)
+        self.assertEqual(output.count(filter_script.MOZLUMI_STOP_LINE), 1)
 
     def test_missing_generic_killall_fails_closed(self):
         bad = expected_base().replace(filter_script.UNSAFE_LINE, b'')

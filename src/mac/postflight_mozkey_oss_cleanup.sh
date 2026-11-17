@@ -1,9 +1,9 @@
 # Mozkey OSS-only postinstall tail. Appended after upstream postflight.sh.
 # Remove only the known non-packaged arm64 fastbuild renderer_style.inc left by
-# earlier development builds. Keep the Mozc.app path and its IME registration.
+# earlier development builds. Keep the Mozlumi.app path and its IME registration.
 # Quarantine first; verify the actual installed app signature before committing.
 
-_mozkey_app='/Library/Input Methods/Mozc.app'
+_mozkey_app='/Library/Input Methods/Mozlumi.app'
 _mozkey_renderer="$_mozkey_app/Contents/Resources/MozcRenderer.app"
 _mozkey_res="$_mozkey_renderer/Contents/Resources"
 _mozkey_old_tag='darwin_arm64-fastbuild-macos-arm64-min12.0-ST-fea79f7fcfbc'
@@ -19,20 +19,20 @@ if [ -e "$_mozkey_old_file" ] || [ -L "$_mozkey_old_file" ]; then
     "$_mozkey_res/bazel-out" "$_mozkey_old_dir" \
     "$_mozkey_old_dir/bin" "$_mozkey_old_dir/bin/renderer"; do
     if [ -L "$_mozkey_path" ] || [ ! -d "$_mozkey_path" ]; then
-      echo "Mozkey postinstall: unexpected directory or symlink: $_mozkey_path" >&2
+      echo "Mozlumi postinstall: unexpected directory or symlink: $_mozkey_path" >&2
       exit 1
     fi
   done
   if [ ! -f "$_mozkey_old_file" ] || [ -L "$_mozkey_old_file" ]; then
-    echo 'Mozkey postinstall: unexpected stale file type' >&2
+    echo 'Mozlumi postinstall: unexpected stale file type' >&2
     exit 1
   fi
 
   _mozkey_renderer_id=$(/usr/libexec/PlistBuddy \
     -c 'Print :CFBundleIdentifier' \
     "$_mozkey_renderer/Contents/Info.plist" 2>/dev/null) || exit 1
-  if [ "$_mozkey_renderer_id" != 'org.mozc.inputmethod.Japanese.Renderer' ]; then
-    echo 'Mozkey postinstall: renderer identifier mismatch' >&2
+  if [ "$_mozkey_renderer_id" != 'blog.curren-lumi.inputmethod.Mozlumi.Renderer' ]; then
+    echo 'Mozlumi postinstall: renderer identifier mismatch' >&2
     exit 1
   fi
 
@@ -45,7 +45,7 @@ if [ -e "$_mozkey_old_file" ] || [ -L "$_mozkey_old_file" ]; then
       "$_mozkey_old_dir" "$_mozkey_old_dir/bin" \
       "$_mozkey_old_dir/bin/renderer" "$_mozkey_old_file" | /usr/bin/sort)
     if [ "$_mozkey_actual_tree" != "$_mozkey_expected_tree" ]; then
-      echo 'Mozkey postinstall: unexpected contents in legacy build directory' >&2
+      echo 'Mozlumi postinstall: unexpected contents in legacy build directory' >&2
       exit 1
     fi
 
@@ -57,15 +57,15 @@ if [ -e "$_mozkey_old_file" ] || [ -L "$_mozkey_old_file" ]; then
       if [ "$_mozkey_recovery_pending" = yes ]; then
         if [ -f "$_mozkey_quarantine_file" ] && [ ! -L "$_mozkey_quarantine_file" ]; then
           if [ -e "$_mozkey_old_file" ] || [ -L "$_mozkey_old_file" ]; then
-            echo 'Mozkey postinstall: CRITICAL: cannot restore stale file; destination occupied' >&2
+            echo 'Mozlumi postinstall: CRITICAL: cannot restore stale file; destination occupied' >&2
           elif /bin/mkdir -p "$_mozkey_old_dir/bin/renderer" && \
               /bin/mv "$_mozkey_quarantine_file" "$_mozkey_old_file"; then
-            echo 'Mozkey postinstall: signature not recovered; legacy file restored' >&2
+            echo 'Mozlumi postinstall: signature not recovered; legacy file restored' >&2
           else
-            echo "Mozkey postinstall: CRITICAL: restore failed; quarantined file at $_mozkey_quarantine_file" >&2
+            echo "Mozlumi postinstall: CRITICAL: restore failed; quarantined file at $_mozkey_quarantine_file" >&2
           fi
         elif [ ! -f "$_mozkey_old_file" ]; then
-          echo 'Mozkey postinstall: CRITICAL: stale file missing from both locations' >&2
+          echo 'Mozlumi postinstall: CRITICAL: stale file missing from both locations' >&2
         fi
       fi
       /bin/rmdir "$_mozkey_quarantine_dir" 2>/dev/null || true
@@ -83,7 +83,7 @@ if [ -e "$_mozkey_old_file" ] || [ -L "$_mozkey_old_file" ]; then
     # The signature outcome, not codesign's diagnostic text, is authoritative.
     # Verify the entire installed app, including the nested renderer.
     if ! /usr/bin/codesign --verify --deep --strict "$_mozkey_app"; then
-      echo 'Mozkey postinstall: signature still invalid after quarantine' >&2
+      echo 'Mozlumi postinstall: signature still invalid after quarantine' >&2
       exit 1
     fi
 
@@ -92,13 +92,13 @@ if [ -e "$_mozkey_old_file" ] || [ -L "$_mozkey_old_file" ]; then
     trap - 0 1 2 3 15
     /bin/rm "$_mozkey_quarantine_file" || exit 1
     /bin/rmdir "$_mozkey_quarantine_dir" || exit 1
-    echo 'Mozkey postinstall: one known legacy renderer resource removed; signature valid'
+    echo 'Mozlumi postinstall: one known legacy renderer resource removed; signature valid'
   fi
 fi
 
 # Do not report a successful install if any other stale content breaks signing.
 if ! /usr/bin/codesign --verify --deep --strict "$_mozkey_app"; then
-  echo 'Mozkey postinstall: installed Mozc.app failed codesign verification' >&2
+  echo 'Mozlumi postinstall: installed Mozlumi.app failed codesign verification' >&2
   exit 1
 fi
 
@@ -111,7 +111,7 @@ if [ "${COMMAND_LINE_INSTALL:-}" != '1' ]; then
   if [ -n "$_mozkey_console_user" ] && [ "$_mozkey_console_user" != 'root' ] && \
      [ "$_mozkey_console_user" != 'loginwindow' ]; then
     /usr/bin/sudo -u "$_mozkey_console_user" \
-      "$_mozkey_app/Contents/MacOS/Mozc" --register_input_source >/dev/null 2>&1 || true
+      "$_mozkey_app/Contents/MacOS/Mozlumi" --register_input_source >/dev/null 2>&1 || true
   fi
 fi
 exit 0

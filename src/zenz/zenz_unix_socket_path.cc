@@ -17,7 +17,8 @@ std::string GetZenzUnixSocketDirectory() {
 #if defined(_WIN32)
   return "";
 #else
-  return absl::StrCat("/tmp/mozc_zenz_",
+  // Mozlumi: separate from Mozc/Mozkey so that both can run side by side.
+  return absl::StrCat("/tmp/mozlumi_zenz_",
                       static_cast<uint64_t>(::geteuid()));
 #endif  // _WIN32
 }

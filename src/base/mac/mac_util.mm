@@ -54,17 +54,18 @@
 
 namespace mozc {
 namespace {
-const char kServerDirectory[] = "/Library/Input Methods/" kProductPrefix ".app/Contents/Resources";
+const char kServerDirectory[] =
+    "/Library/Input Methods/" kMozlumiMacAppName ".app/Contents/Resources";
 #if TARGET_OS_OSX
 const unsigned char kPrelauncherPath[] =
-    "/Library/Input Methods/" kProductPrefix ".app/Contents/Resources/" kProductPrefix
+    "/Library/Input Methods/" kMozlumiMacAppName ".app/Contents/Resources/" kProductPrefix
     "Prelauncher.app";
 #endif  // TARGET_OS_OSX
 
 #ifdef GOOGLE_JAPANESE_INPUT_BUILD
 const char kProjectPrefix[] = "com.google.inputmethod.Japanese.";
 #elif defined(MOZC_BUILD)
-const char kProjectPrefix[] = "org.mozc.inputmethod.Japanese.";
+const char kProjectPrefix[] = kMozlumiMacBundleIdPrefix ".";
 #else  // GOOGLE_JAPANESE_INPUT_BUILD, MOZC_BUILD
 #error Unknown branding
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD, MOZC_BUILD
@@ -152,7 +153,7 @@ std::string MacUtil::GetLoggingDirectory() {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES);
     if ([paths count] > 0) {
       dir.assign([[[[paths objectAtIndex:0] stringByAppendingPathComponent:@"Logs"]
-          stringByAppendingPathComponent:@kProductPrefix] fileSystemRepresentation]);
+          stringByAppendingPathComponent:@kMozlumiMacAppName] fileSystemRepresentation]);
     }
   }
   return dir;

@@ -94,8 +94,8 @@ def main():
   else:
     long_version = version.GetMozkeyInstallerVersion()
     short_version = version.GetMozkeyReleaseVersionString()
-    domain_prefix = 'org.mozc'
-    product_name = 'Mozkey'
+    domain_prefix = 'blog.curren-lumi'
+    product_name = 'Mozlumi'
 
   finder_version = (long_version if options.branding == 'GoogleJapaneseInput'
                     else short_version)

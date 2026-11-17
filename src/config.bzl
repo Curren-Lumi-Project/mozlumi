@@ -48,7 +48,10 @@ IBUS_MOZC_PATH = "/usr/lib/ibus-mozkey/ibus-engine-mozkey"
 EMACS_MOZC_CLIENT_DIR = "/usr/share/emacs/site-lisp/emacs-mozc"
 EMACS_MOZC_HELPER_DIR = "/usr/bin"
 
-MACOS_BUNDLE_ID_PREFIX = "org.mozc.inputmethod.Japanese"
+# Mozlumi: separate identity from Mozc/Mozkey so that both can be installed.
+MACOS_BUNDLE_ID_PREFIX = "blog.curren-lumi.inputmethod.Mozlumi"
+MACOS_APP_NAME = "Mozlumi"
+MACOS_PKG_ID = "blog.curren-lumi.pkg.Mozlumi"
 MACOS_MIN_OS_VER = "12.0"
 
 # identity for codesign. The value passed to the --sign option of the codesign command.

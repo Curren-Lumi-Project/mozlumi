@@ -12,7 +12,7 @@
         </customObject>
         <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
-        <menu title="Mozkey" id="6" userLabel="Menu (Mozkey)">
+        <menu title="Mozlumi" id="6" userLabel="Menu (Mozlumi)">
             <items>
                 <menuItem title="再変換" keyEquivalent="R" id="30">
                     <modifierMask key="keyEquivalentModifierMask" control="YES"/>
@@ -36,7 +36,7 @@
                         <action selector="dictionaryToolClicked:" target="-2" id="20"/>
                     </connections>
                 </menuItem>
-                <menuItem title="Mozkeyについて" id="28">
+                <menuItem title="Mozlumiについて" id="28">
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <connections>
                         <action selector="aboutDialogClicked:" target="-2" id="29"/>
