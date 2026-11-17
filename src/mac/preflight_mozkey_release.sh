@@ -98,7 +98,8 @@ if [ ! -d "$_mozkey_app" ]; then
   [ ! -e '/Applications/Mozlumi' ] || _mozkey_fail 'applications directory remains without the main app'
   for _mozkey_agent in \
     '/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist' \
-    '/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist'; do
+    '/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist' \
+    '/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Updater.plist'; do
     if [ -e "$_mozkey_agent" ] || [ -L "$_mozkey_agent" ]; then
       _mozkey_fail "launch agent remains without the main app: $_mozkey_agent"
     fi

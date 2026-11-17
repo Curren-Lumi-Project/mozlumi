@@ -130,6 +130,7 @@ def transform(source: str, fixture: Path, pkgutil: Path, plistbuddy: Path, targe
         "/Applications/Mozlumi/UninstallMozlumi.app",
         "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist",
         "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist",
+        "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Updater.plist",
         "/Library/Input Methods", "/Library/LaunchAgents", "/Applications/Mozlumi",
         "/Library", "/Applications",
     ]

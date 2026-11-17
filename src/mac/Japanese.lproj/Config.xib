@@ -36,6 +36,11 @@
                         <action selector="dictionaryToolClicked:" target="-2" id="20"/>
                     </connections>
                 </menuItem>
+                <menuItem title="アップデートを確認..." id="34">
+                    <connections>
+                        <action selector="checkForUpdatesClicked:" target="-2" id="35"/>
+                    </connections>
+                </menuItem>
                 <menuItem title="Mozlumiについて" id="28">
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <connections>

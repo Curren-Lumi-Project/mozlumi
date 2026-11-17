@@ -84,7 +84,9 @@ bool DeleteFiles(const AuthorizationRef &auth) {
       // Mozlumi: must match config.bzl (MACOS_APP_NAME / MACOS_BUNDLE_ID_PREFIX).
       "/Library/Input Methods/Mozlumi.app",
       "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist",
-      "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist", "/Applications/Mozlumi",
+      "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist",
+      "/Library/LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Updater.plist",
+      "/Applications/Mozlumi",
       nullptr};
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
   for (int i = 0; kRemovePaths[i] != nullptr; ++i) {

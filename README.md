@@ -56,16 +56,23 @@ Space で変換すると、ローカルの AI（Zenz）が裏で同じ文を変�
 
 ### 動作環境
 
-- macOS（Apple Silicon / Intel、Universal PKG）で動作を確認しています
+- macOS（Universal PKG）。動作を確認しているのは Apple Silicon の Mac です。Intel Mac では確認していません
 - Windows・Linux では確認していません
 
 ### インストール
 
-現在、ビルド済みのパッケージは配布していません。ソースからビルドしてください。
+[Releases](https://github.com/Curren-Lumi-Project/mozlumi/releases) から `Mozlumi_v…_macos_universal.pkg` をダウンロードしてインストールしてください。ソースからビルドすることもできます。
 
 - PKG は未署名です。初回は「システム設定」→「プライバシーとセキュリティ」から「このまま開く」で開いてください
 - Mozkey・Mozc とは別のアプリとしてインストールされます（`/Library/Input Methods/Mozlumi.app`）。Mozkey と並べて使えます
 - 学習データ・設定は Mozkey とは別に保存されます（`~/Library/Application Support/Mozlumi`）。Mozkey からの引き継ぎはありません
+
+### アップデート
+
+- 新しい版があるかを 1 日 1 回 GitHub に確認し、あれば知らせます。「更新する」を選ぶと、PKG をダウンロードして SHA-256 を確かめ、管理者のパスワードを入力するだけで入れ替えます（ログアウトは不要です）
+- 入力メニューの「アップデートを確認...」からいつでも確認できます
+- 毎日の確認は、設定の「プライバシー」タブの「Mozlumi のアップデートを1日1回確認する」で止められます
+- 通信するのはアップデートの確認とダウンロードのときだけで、入力処理（変換・AI変換）は外部と通信しません
 
 ### ビルド（macOS）
 
@@ -151,16 +158,23 @@ While typing or converting, press **Option+Tab** to have the AI reconvert the wh
 
 ### Platforms
 
-- Tested on macOS (Apple Silicon / Intel, Universal PKG)
+- macOS (Universal PKG). Tested on Apple Silicon Macs; not tested on Intel Macs
 - Not tested on Windows or Linux
 
 ### Installation
 
-No prebuilt packages are distributed at the moment. Please build from source.
+Download `Mozlumi_v…_macos_universal.pkg` from [Releases](https://github.com/Curren-Lumi-Project/mozlumi/releases) and install it. You can also build from source.
 
 - The PKG is not signed. On first launch, open it from System Settings → Privacy & Security → Open Anyway
 - Mozlumi is installed as a separate app from Mozkey and Mozc (`/Library/Input Methods/Mozlumi.app`), so it can be used side by side with Mozkey
 - Learning data and settings are stored separately from Mozkey (`~/Library/Application Support/Mozlumi`). Nothing is migrated from Mozkey
+
+### Updates
+
+- Once a day, Mozlumi checks GitHub for a new version and lets you know. If you choose to update, it downloads the PKG, verifies its SHA-256, and replaces Mozlumi after you enter an administrator password (no logout needed)
+- You can also check at any time from "Check for Updates..." in the input menu
+- The daily check can be turned off on the Privacy tab of the settings (the checkbox label is in Japanese: 「Mozlumi のアップデートを1日1回確認する」)
+- Only the update check and download use the network; input processing (conversion and AI conversion) never does
 
 ### Build (macOS)
 

@@ -127,6 +127,7 @@ mozc_macos_application(
         "//data/installer:DICTIONARY_NOTICES.md",
         "//data/installer:SudachiDict-LEGAL.txt",
         "//data/installer:credits_en.html",
+        "updater/mozlumi_update.zsh",
     ],
     strings = [
         "English.lproj/InfoPlist.strings",

@@ -97,6 +97,8 @@
 #include "absl/log/log.h"
 #include "absl/strings/string_view.h"
 #include "base/config_file_stream.h"
+#include "base/file_util.h"
+#include "base/system_util.h"
 #include "client/client.h"
 #include "config/config_handler.h"
 #include "gui/base/util.h"
@@ -130,6 +132,7 @@
 #endif  // __APPLE__
 
 namespace {
+
 template <typename T>
 void Connect(const QList<T *> &objects, const char *signal,
              const QObject *receiver, const char *slot) {
@@ -293,6 +296,27 @@ namespace mozc {
 namespace gui {
 
 namespace {
+#ifdef __APPLE__
+// Mozlumi: the updater (mac/updater/mozlumi_update.zsh) skips the daily check
+// while this file exists.
+std::string UpdateCheckDisabledFilePath() {
+  return FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
+                            "update_check_disabled");
+}
+
+bool IsUpdateCheckEnabled() {
+  return !FileUtil::FileExists(UpdateCheckDisabledFilePath()).ok();
+}
+
+void SetUpdateCheckEnabled(bool enabled) {
+  const std::string path = UpdateCheckDisabledFilePath();
+  if (enabled) {
+    FileUtil::UnlinkIfExists(path).IgnoreError();
+  } else if (!FileUtil::FileExists(path).ok()) {
+    FileUtil::SetContents(path, "").IgnoreError();
+  }
+}
+#endif  // __APPLE__
 #ifdef _WIN32
 void NotifyDisplayAttributeUpdate();
 #endif  // _WIN32
@@ -689,6 +713,17 @@ ConfigDialog::ConfigDialog()
                    zenzPreeditUnderlineColorButton, SLOT(setEnabled(bool)));
 
   InitializeCandidateRubyFontComboBox(candidateRubyFontComboBox);
+
+#ifdef __APPLE__
+  // Mozlumi: daily update check, next to the other privacy options.
+  update_check_checkbox_ = new QCheckBox(
+      QString::fromUtf8(
+          "Mozlumi のアップデートを1日1回確認する（GitHub に問い合わせます）"),
+      presentationModeCheckBox->parentWidget());
+  if (QLayout *layout = presentationModeCheckBox->parentWidget()->layout()) {
+    layout->addWidget(update_check_checkbox_);
+  }
+#endif  // __APPLE__
 
   // Event handlers to update 'Apply' button state.
   Connect(findChildren<QCheckBox *>(), SIGNAL(stateChanged(int)), this,
@@ -1109,6 +1144,9 @@ bool ConfigDialog::Update() {
     if (MacUtil::CheckPrelauncherLoginItemStatus()) {
       MacUtil::RemovePrelauncherLoginItem();
     }
+  }
+  if (update_check_checkbox_ != nullptr) {
+    SetUpdateCheckEnabled(update_check_checkbox_->isChecked());
   }
 #endif  // __APPLE__
 
@@ -6531,6 +6569,9 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
 
 #ifdef __APPLE__
   startupCheckBox->setChecked(MacUtil::CheckPrelauncherLoginItemStatus());
+  if (update_check_checkbox_ != nullptr) {
+    update_check_checkbox_->setChecked(IsUpdateCheckEnabled());
+  }
 #endif  // __APPLE__
 }
 
@@ -8275,6 +8316,9 @@ void ConfigDialog::RecordCurrentStateAsApplied() {
 
 #ifdef __APPLE__
   initial_startup_enabled_ = startupCheckBox->isChecked();
+  if (update_check_checkbox_ != nullptr) {
+    initial_update_check_enabled_ = update_check_checkbox_->isChecked();
+  }
 #endif  // __APPLE__
 }
 
@@ -8300,6 +8344,10 @@ bool ConfigDialog::IsModified() const {
 
 #ifdef __APPLE__
   if (startupCheckBox->isChecked() != initial_startup_enabled_) {
+    return true;
+  }
+  if (update_check_checkbox_ != nullptr &&
+      update_check_checkbox_->isChecked() != initial_update_check_enabled_) {
     return true;
   }
 #endif  // __APPLE__

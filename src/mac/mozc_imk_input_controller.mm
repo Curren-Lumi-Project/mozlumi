@@ -1446,6 +1446,25 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   MacProcess::LaunchMozcTool("about_dialog");
 }
 
+- (IBAction)checkForUpdatesClicked:(id)sender {
+  // Mozlumi: the updater runs in its own process; the input method itself
+  // never accesses the network.
+  NSString *script = [[NSBundle mainBundle] pathForResource:@"mozlumi_update"
+                                                     ofType:@"zsh"];
+  if (script == nil) {
+    LOG(ERROR) << "mozlumi_update.zsh is not found";
+    return;
+  }
+  NSTask *task = [[NSTask alloc] init];
+  task.executableURL = [NSURL fileURLWithPath:@"/bin/zsh"];
+  task.arguments = @[ script, @"--manual" ];
+  NSError *error = nil;
+  if (![task launchAndReturnError:&error]) {
+    LOG(ERROR) << "Failed to launch the updater: "
+               << error.localizedDescription.UTF8String;
+  }
+}
+
 + (void)setGlobalRendererReceiver:(RendererReceiver *)rendererReceiver {
   gRendererReceiver = rendererReceiver;
 }

@@ -114,4 +114,20 @@ if [ "${COMMAND_LINE_INSTALL:-}" != '1' ]; then
       "$_mozkey_app/Contents/MacOS/Mozlumi" --register_input_source >/dev/null 2>&1 || true
   fi
 fi
+
+# Mozlumi: start the daily update check for the current user if it is not
+# loaded yet. Never unload or reload it here: the updater itself may be the
+# process that started this installation. A changed plist takes effect at the
+# next login.
+_mozkey_updater_label='blog.curren-lumi.inputmethod.Mozlumi.Updater'
+_mozkey_updater_plist="/Library/LaunchAgents/$_mozkey_updater_label.plist"
+_mozkey_updater_user=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null) || _mozkey_updater_user=''
+if [ -f "$_mozkey_updater_plist" ] && [ -n "$_mozkey_updater_user" ] && \
+   [ "$_mozkey_updater_user" != 'root' ] && [ "$_mozkey_updater_user" != 'loginwindow' ]; then
+  _mozkey_updater_uid=$(/usr/bin/id -u "$_mozkey_updater_user" 2>/dev/null) || _mozkey_updater_uid=''
+  if [ -n "$_mozkey_updater_uid" ] && \
+     ! /bin/launchctl print "gui/$_mozkey_updater_uid/$_mozkey_updater_label" >/dev/null 2>&1; then
+    /bin/launchctl bootstrap "gui/$_mozkey_updater_uid" "$_mozkey_updater_plist" >/dev/null 2>&1 || true
+  fi
+fi
 exit 0

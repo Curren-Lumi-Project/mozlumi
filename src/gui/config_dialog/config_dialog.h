@@ -124,6 +124,11 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   config::Config last_applied_config_;
   bool initial_ime_hot_key_disabled_;
   bool initial_startup_enabled_;
+  // Mozlumi (macOS): "check for updates once a day". Stored as the absence of
+  // update_check_disabled in the user profile directory, which the updater
+  // script reads.
+  QCheckBox *update_check_checkbox_ = nullptr;
+  bool initial_update_check_enabled_ = true;
   bool suppress_apply_button_update_;
   int initial_preedit_method_;
   bool initial_use_keyboard_to_change_preedit_method_;

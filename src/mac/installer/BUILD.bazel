@@ -45,6 +45,7 @@ pkg_zip(
     srcs = [
         "LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Converter.plist",
         "LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Renderer.plist",
+        "LaunchAgents/blog.curren-lumi.inputmethod.Mozlumi.Updater.plist",
     ],
     out = "launch_agents.zip",
     strip_prefix = ".",

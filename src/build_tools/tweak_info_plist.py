@@ -110,6 +110,9 @@ def main():
           options.branding,
       'DOMAIN_PREFIX':
           domain_prefix,
+      # Mozlumi: read by the updater (mac/updater/mozlumi_update.zsh).
+      'MOZLUMI_BUILD':
+          version.GetVersionInFormat('@MOZLUMI_BUILD@'),
   }
 
   codecs.open(options.output, 'w', encoding='utf-8').write(

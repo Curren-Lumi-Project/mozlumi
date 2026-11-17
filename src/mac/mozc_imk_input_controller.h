@@ -180,6 +180,10 @@
  */
 - (IBAction)aboutDialogClicked:(id)sender;
 
+/** checkForUpdatesClicked: is called when the user clicks "Check for
+ * Updates..." (Mozlumi). It runs the bundled updater script. */
+- (IBAction)checkForUpdatesClicked:(id)sender;
+
 /** Sets the ClientInterface to use in the controller.
  *
  * @param newMozcClient The client object to communicate with the Mozc server process.
