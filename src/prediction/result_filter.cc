@@ -193,7 +193,22 @@ bool ResultFilter::ShouldRemove(const Result& result, int added_num) {
   };
 
   if (!is_mixed_conversion_) {
-    return check_dup_and_return(result.value);
+    // Mozlumi: desktop typing correction. Show at most a few corrected
+    // candidates and only within the top part of the list.
+    constexpr int kDesktopTcMaxCount = 3;
+    constexpr int kDesktopTcMaxRank = 10;
+    if ((result.attributes & Attribute::TYPING_CORRECTION) &&
+        (added_num >= kDesktopTcMaxRank ||
+         tc_count_ >= kDesktopTcMaxCount)) {
+      return true;
+    }
+    if (check_dup_and_return(result.value)) {
+      return true;
+    }
+    if (result.attributes & Attribute::TYPING_CORRECTION) {
+      ++tc_count_;
+    }
+    return false;
   }
 
   // Suppress long candidates to show more candidates in the candidate view.

@@ -339,6 +339,9 @@ class DictionaryPredictionAggregatorTest
     request_ = std::make_unique<commands::Request>();
     config_ = std::make_unique<config::Config>();
     config::ConfigHandler::GetDefaultConfig(config_.get());
+    // Mozlumi enables typing correction by default; keep upstream tests on
+    // the original default.
+    config_->set_use_typing_correction(false);
     table_ = std::make_shared<composer::Table>();
     composer_ =
         std::make_unique<composer::Composer>(table_, *request_, *config_);
@@ -942,6 +945,9 @@ TEST_F(DictionaryPredictionAggregatorTest, TriggerConditionsLatinInputMode) {
 
   for (const auto& test_case : kTestCases) {
     config::ConfigHandler::GetDefaultConfig(config_.get());
+    // Mozlumi enables typing correction by default; keep upstream tests on
+    // the original default.
+    config_->set_use_typing_correction(false);
     // Resets to default value.
     // Implementation note: Since the value of |request_| is used to initialize
     // composer_ and convreq_, it is not safe to reset |request_| with new

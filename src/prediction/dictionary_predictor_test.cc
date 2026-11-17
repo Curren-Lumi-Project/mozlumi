@@ -235,6 +235,9 @@ class DictionaryPredictorTest : public testing::TestWithTempUserProfile {
     request_ = std::make_unique<commands::Request>();
     config_ = std::make_unique<config::Config>();
     config::ConfigHandler::GetDefaultConfig(config_.get());
+    // Mozlumi enables typing correction by default; keep upstream tests on
+    // the original default.
+    config_->set_use_typing_correction(false);
     composer_ = std::make_unique<composer::Composer>(
         composer::Table::GetSharedDefaultTable(), *request_, *config_);
   }

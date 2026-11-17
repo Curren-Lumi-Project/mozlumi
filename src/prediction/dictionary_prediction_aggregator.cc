@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -122,7 +123,9 @@ DictionaryPredictionAggregator::DictionaryPredictionAggregator(
       dictionary_decoder_(modules),
       handwriting_decoder_(modules, decoder),
       zero_query_decoder_(modules),
-      english_decoder_(modules) {}
+      english_decoder_(modules),
+      roman_typo_corrector_(
+          std::make_unique<RomanTypoCorrector>(modules.GetDictionary())) {}
 
 std::vector<Result> DictionaryPredictionAggregator::AggregateResultsForTesting(
     const ConversionRequest& request) const {
@@ -239,7 +242,75 @@ std::vector<Result> DictionaryPredictionAggregator::AggregateResultsForDesktop(
     AggregateBigram(request, &results);
   }
 
+  // Mozlumi: desktop typing correction (誤入力補正).
+  AggregateTypingCorrectedResultsForDesktop(request, &results);
+
   return results;
+}
+
+void DictionaryPredictionAggregator::AggregateTypingCorrectedResultsForDesktop(
+    const ConversionRequest& request, std::vector<Result>* results) const {
+  if (!RomanTypoCorrector::IsEnabled(request)) {
+    return;
+  }
+  const std::vector<TypeCorrectedQuery> queries =
+      roman_typo_corrector_->Correct(request);
+  if (queries.empty()) {
+    return;
+  }
+
+  // Keep only a few results per corrected key so that corrected candidates do
+  // not flood the suggestion window.
+  constexpr size_t kMaxResultsPerQuery = 3;
+  const auto* manager =
+      config::CharacterFormManager::GetCharacterFormManager();
+
+  for (const TypeCorrectedQuery& query : queries) {
+    ConversionRequest::Options options = request.options();
+    options.kana_modifier_insensitive_conversion = false;
+    options.use_already_typing_corrected_key = true;
+    const ConversionRequest corrected_request =
+        ConversionRequestBuilder()
+            .SetConversionRequestView(request)
+            .SetOptions(std::move(options))
+            .SetKey(query.correction)
+            .Build();
+
+    std::vector<Result> corrected_results;
+    int min_unigram_key_len = 0;
+    AggregateUnigram(corrected_request, &corrected_results,
+                     &min_unigram_key_len);
+    // A hiragana value identical to the corrected reading (e.g. "しんかい")
+    // only takes a slot from the kanji candidates.
+    std::erase_if(corrected_results, [&query](const Result& r) {
+      return r.value == query.correction;
+    });
+    if (corrected_results.empty()) {
+      continue;
+    }
+
+    // Prefer the exact match of the corrected key, then the smaller wcost.
+    absl::c_stable_sort(corrected_results,
+                        [&query](const Result& a, const Result& b) {
+                          const bool a_exact = a.key == query.correction;
+                          const bool b_exact = b.key == query.correction;
+                          if (a_exact != b_exact) return a_exact;
+                          return a.wcost < b.wcost;
+                        });
+    if (corrected_results.size() > kMaxResultsPerQuery) {
+      corrected_results.resize(kMaxResultsPerQuery);
+    }
+
+    for (Result& result : corrected_results) {
+      PopulateTypeCorrectedQuery(query, &result);
+      converter::RewriteCandidateValues(
+          [manager](absl::string_view s) {
+            return manager->ConvertConversionString(s);
+          },
+          &result);
+      results->emplace_back(std::move(result));
+    }
+  }
 }
 
 std::vector<Result> DictionaryPredictionAggregator::

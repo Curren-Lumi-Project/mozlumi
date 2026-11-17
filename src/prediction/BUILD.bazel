@@ -344,6 +344,7 @@ mozc_cc_library(
         ":realtime_decoder",
         ":result",
         ":result_filter",
+        ":roman_typo_corrector",
         ":single_kanji_decoder",
         ":zero_query_decoder",
         "//base:japanese_util",
@@ -977,6 +978,71 @@ mozc_cc_test(
         "//request:conversion_request",
         "//request:request_test_util",
         "//testing:gunit_main",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+# Mozlumi: desktop typing correction (誤入力補正).
+mozc_cc_library(
+    name = "roman_typo_candidates",
+    srcs = ["roman_typo_candidates.cc"],
+    hdrs = ["roman_typo_candidates.h"],
+)
+
+mozc_cc_test(
+    name = "roman_typo_candidates_test",
+    size = "small",
+    srcs = ["roman_typo_candidates_test.cc"],
+    deps = [
+        ":roman_typo_candidates",
+        "//testing:gunit",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_library(
+    name = "roman_typo_corrector",
+    srcs = ["roman_typo_corrector.cc"],
+    hdrs = ["roman_typo_corrector.h"],
+    deps = [
+        ":roman_typo_candidates",
+        "//base:util",
+        "//composer",
+        "//composer:query",
+        "//composer:table",
+        "//dictionary:dictionary_interface",
+        "//dictionary:dictionary_token",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//request:conversion_request",
+        "//transliteration",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+mozc_cc_test(
+    name = "roman_typo_corrector_test",
+    size = "small",
+    srcs = ["roman_typo_corrector_test.cc"],
+    deps = [
+        ":roman_typo_corrector",
+        "//composer",
+        "//composer:query",
+        "//composer:table",
+        "//config:config_handler",
+        "//dictionary:dictionary_interface",
+        "//dictionary:dictionary_mock",
+        "//dictionary:dictionary_token",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//request:conversion_request",
+        "//request:options",
+        "//testing:gunit",
+        "//testing:gunit_main",
+        "//testing:mozctest",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

@@ -32,6 +32,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "absl/strings/string_view.h"
@@ -42,6 +43,7 @@
 #include "prediction/handwriting_decoder.h"
 #include "prediction/realtime_decoder.h"
 #include "prediction/result.h"
+#include "prediction/roman_typo_corrector.h"
 #include "prediction/zero_query_decoder.h"
 #include "request/conversion_request.h"
 
@@ -158,6 +160,11 @@ class DictionaryPredictionAggregator
   void MaybePopulateTypingCorrectionPenalty(const ConversionRequest& request,
                                             std::vector<Result>* results) const;
 
+  // Mozlumi: Aggregates typing corrected unigram results for desktop
+  // (romaji input). e.g. "sunkai" -> 深海.
+  void AggregateTypingCorrectedResultsForDesktop(
+      const ConversionRequest& request, std::vector<Result>* results) const;
+
   // Returns true if the realtime conversion should be used.
   // TODO(hidehiko): add Config and Request instances into the arguments
   //   to represent the dependency explicitly.
@@ -193,6 +200,7 @@ class DictionaryPredictionAggregator
   const HandwritingDecoder handwriting_decoder_;
   const ZeroQueryDecoder zero_query_decoder_;
   const EnglishDecoder english_decoder_;
+  const std::unique_ptr<const RomanTypoCorrector> roman_typo_corrector_;
 };
 
 }  // namespace prediction
