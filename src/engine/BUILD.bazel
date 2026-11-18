@@ -29,6 +29,7 @@
 
 load(
     "//:build_defs.bzl",
+    "mozc_cc_binary",
     "mozc_cc_library",
     "mozc_cc_test",
     "mozc_select",
@@ -595,5 +596,50 @@ mozc_cc_test(
         "//testing:gunit_main",
         "//transliteration",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+# Mozlumi: sentence-level typo correction (誤入力補正).
+mozc_cc_library(
+    name = "sentence_typo_corrector",
+    srcs = ["sentence_typo_corrector.cc"],
+    hdrs = ["sentence_typo_corrector.h"],
+    deps = [
+        "//base:util",
+        "//base/strings:japanese",
+        "//composer",
+        "//converter:converter_interface",
+        "//converter:segments",
+        "//prediction:roman_typo_candidates",
+        "//prediction:typo_habit_store",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//request:conversion_request",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_binary(
+    name = "sentence_typo_eval_main",
+    testonly = True,
+    srcs = ["sentence_typo_eval_main.cc"],
+    data = [":eval_engine_data"],
+    tags = ["manual"],
+    deps = [
+        ":engine",
+        ":sentence_typo_corrector",
+        "//base:init_mozc",
+        "//composer",
+        "//composer:table",
+        "//config:config_handler",
+        "//converter:segments",
+        "//data_manager",
+        "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
+        "//request:conversion_request",
+        "//transliteration",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/strings",
     ],
 )
