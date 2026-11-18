@@ -60,6 +60,9 @@
 
 ABSL_FLAG(std::string, engine_data_path, "", "path to mozc.data");
 ABSL_FLAG(int32_t, max_conversions, 64, "fixes converted per input");
+ABSL_FLAG(int32_t, second_round_seeds, 0, "fixes corrected once more");
+ABSL_FLAG(int32_t, second_round_conversions, 16,
+          "fixes converted per seed in the second round");
 
 namespace {
 
@@ -92,6 +95,9 @@ int main(int argc, char** argv) {
   options.max_conversions = absl::GetFlag(FLAGS_max_conversions);
   // Converts everything so that the threshold can be tuned offline.
   options.min_worst_badness = 0;
+  options.second_round_seeds = absl::GetFlag(FLAGS_second_round_seeds);
+  options.second_round_conversions =
+      absl::GetFlag(FLAGS_second_round_conversions);
 
   auto convert = [&](const mozc::composer::Composer& composer,
                      mozc::Segments* segments) {

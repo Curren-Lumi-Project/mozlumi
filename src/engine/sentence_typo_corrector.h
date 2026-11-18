@@ -67,6 +67,12 @@ struct SentenceTypoOptions {
   // mostly below it: in the evaluation, 2000 skipped about a quarter of them
   // without losing any fix.
   int64_t min_worst_badness = 2000;
+  // Two typos: the most plausible one-key fixes (scored with
+  // seed_cost_per_typo) are corrected once more, converting at most
+  // second_round_conversions fixes for each. 0 seeds disables it.
+  size_t second_round_seeds = 2;
+  size_t second_round_conversions = 16;
+  float seed_cost_per_typo = 2000.0f;
 };
 
 struct SentenceTypoCandidate {

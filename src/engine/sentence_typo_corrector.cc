@@ -98,7 +98,30 @@ std::string SentenceValue(const Segments& segments) {
   return value;
 }
 
-SentenceTypoAnalysis AnalyzeSentenceTypos(
+namespace {
+
+bool Convert(const ConverterInterface& converter,
+             const composer::Composer& composer,
+             const commands::Request& request, const config::Config& config,
+             const commands::Context& context, bool use_history,
+             Segments* segments) {
+  ConversionRequest::Options request_options;
+  request_options.request_type = ConversionRequest::CONVERSION;
+  request_options.enable_user_history_for_conversion = use_history;
+  const ConversionRequest conversion_request =
+      ConversionRequestBuilder()
+          .SetComposer(composer)
+          .SetRequestView(request)
+          .SetContextView(context)
+          .SetConfigView(config)
+          .SetOptions(std::move(request_options))
+          .Build();
+  return converter.StartConversion(conversion_request, segments) &&
+         segments->conversion_segments_size() > 0;
+}
+
+// One round: converts one-key fixes of the typed romaji.
+SentenceTypoAnalysis AnalyzeOneEdit(
     const ConverterInterface& converter, const composer::Composer& composer,
     const Segments& original, const commands::Request& request,
     const config::Config& config, const commands::Context& context,
@@ -196,20 +219,9 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
   }
 
   for (const Pending& p : pending) {
-    ConversionRequest::Options request_options;
-    request_options.request_type = ConversionRequest::CONVERSION;
-    request_options.enable_user_history_for_conversion = use_history;
-    const ConversionRequest fixed_request =
-        ConversionRequestBuilder()
-            .SetComposer(p.composer)
-            .SetRequestView(request)
-            .SetContextView(context)
-            .SetConfigView(config)
-            .SetOptions(std::move(request_options))
-            .Build();
     Segments segments;
-    if (!converter.StartConversion(fixed_request, &segments) ||
-        segments.conversion_segments_size() == 0) {
+    if (!Convert(converter, p.composer, request, config, context, use_history,
+                 &segments)) {
       continue;
     }
     SentenceTypoCandidate candidate;
@@ -223,6 +235,79 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
     if (!candidate.value.empty()) {
       analysis.candidates.push_back(std::move(candidate));
     }
+  }
+  return analysis;
+}
+
+}  // namespace
+
+SentenceTypoAnalysis AnalyzeSentenceTypos(
+    const ConverterInterface& converter, const composer::Composer& composer,
+    const Segments& original, const commands::Request& request,
+    const config::Config& config, const commands::Context& context,
+    bool use_history, const SentenceTypoOptions& options,
+    const prediction::TypoHabitStore* habits) {
+  SentenceTypoAnalysis analysis =
+      AnalyzeOneEdit(converter, composer, original, request, config, context,
+                     use_history, options, habits);
+  if (options.second_round_seeds == 0 || analysis.candidates.empty()) {
+    return analysis;
+  }
+
+  // Seeds: the most plausible one-key fixes that change the conversion.
+  std::vector<std::pair<double, size_t>> seeds;
+  for (size_t i = 0; i < analysis.candidates.size(); ++i) {
+    const SentenceTypoCandidate& c = analysis.candidates[i];
+    if (c.value == analysis.value) {
+      continue;
+    }
+    seeds.emplace_back(static_cast<double>(c.sentence_cost) +
+                           options.seed_cost_per_typo * c.typo_cost,
+                       i);
+  }
+  std::stable_sort(seeds.begin(), seeds.end(),
+                   [](const auto& a, const auto& b) { return a.first < b.first; });
+  if (seeds.size() > options.second_round_seeds) {
+    seeds.resize(options.second_round_seeds);
+  }
+
+  SentenceTypoOptions second = options;
+  second.max_conversions = options.second_round_conversions;
+  std::vector<std::string> values;
+  for (const SentenceTypoCandidate& c : analysis.candidates) {
+    values.push_back(c.value);
+  }
+  std::vector<SentenceTypoCandidate> added;
+  for (const auto& [score, index] : seeds) {
+    // Copy: analysis.candidates is not modified until the end.
+    const SentenceTypoCandidate seed = analysis.candidates[index];
+    composer::Composer seed_composer = composer;
+    seed_composer.EditErase();
+    seed_composer.SetInputMode(composer.GetInputMode());
+    seed_composer.InsertCharacter(seed.romaji);
+    Segments seed_segments;
+    if (!Convert(converter, seed_composer, request, config, context,
+                 use_history, &seed_segments)) {
+      continue;
+    }
+    const SentenceTypoAnalysis next =
+        AnalyzeOneEdit(converter, seed_composer, seed_segments, request,
+                       config, context, use_history, second, habits);
+    for (const SentenceTypoCandidate& c : next.candidates) {
+      if (c.value == analysis.value ||
+          std::find(values.begin(), values.end(), c.value) != values.end()) {
+        continue;
+      }
+      SentenceTypoCandidate two = c;
+      two.typo_cost = seed.typo_cost + c.typo_cost;
+      two.edit = seed.edit + "|" + c.edit;
+      two.segment_rank = seed.segment_rank;
+      values.push_back(two.value);
+      added.push_back(std::move(two));
+    }
+  }
+  for (SentenceTypoCandidate& c : added) {
+    analysis.candidates.push_back(std::move(c));
   }
   return analysis;
 }
