@@ -441,6 +441,7 @@ mozc_cc_library(
         "//composer",
         "//config:config_handler",
         "//converter:attribute",
+        "//prediction:roman_typo_candidates",
         "//prediction:typo_habit_store",
         "//converter:converter_interface",
         "//converter:segments",

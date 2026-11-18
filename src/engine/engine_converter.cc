@@ -62,6 +62,7 @@
 #include "engine/engine_converter_interface.h"
 #include "engine/engine_output.h"
 #include "protocol/candidate_window.pb.h"
+#include "prediction/roman_typo_candidates.h"
 #include "prediction/typo_habit_store.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
@@ -1217,6 +1218,9 @@ void EngineConverter::AddTypingCorrectionCandidates(
       })) {
     return;
   }
+  if (AddDanglingRomajiFix(composer, context)) {
+    return;
+  }
   const std::string key = composer.GetQueryForConversion();
   const size_t key_len = Util::CharsLen(key);
 
@@ -1285,6 +1289,154 @@ void EngineConverter::AddTypingCorrectionCandidates(
                                  ? focused_id + static_cast<int>(added)
                                  : focused_id);
   }
+}
+
+namespace {
+
+// Number of trailing ASCII letters, i.e. romaji that is still pending in the
+// composition ("よくやry" -> 2).
+size_t TrailingAsciiLetters(absl::string_view s) {
+  size_t n = 0;
+  while (n < s.size()) {
+    const char c = s[s.size() - 1 - n];
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) {
+      break;
+    }
+    ++n;
+  }
+  return n;
+}
+
+}  // namespace
+
+bool EngineConverter::AddDanglingRomajiFix(const composer::Composer& composer,
+                                           const commands::Context& context) {
+  // One pending letter is often intended ("おk", "ｗ"). Two or more letters
+  // that could not become kana ("ry", "ky", "sh") are almost always a typo.
+  constexpr size_t kMinDanglingLetters = 2;
+  // Only the most plausible fix is added; a second one is usually noise
+  // ("よくやりゃ").
+  constexpr size_t kMaxFixes = 1;
+  // Fixes that still leave pending romaji are skipped cheaply; this bounds
+  // how many are tried.
+  constexpr size_t kMaxFixesToCheck = 80;
+
+  const std::string raw = composer.GetRawString();
+  const size_t dangling = TrailingAsciiLetters(composer.GetStringForPreedit());
+  if (dangling < kMinDanglingLetters || dangling >= raw.size()) {
+    return false;
+  }
+  const size_t fixed_prefix = raw.size() - dangling;
+
+  std::vector<prediction::RomanTypoCandidate> candidates =
+      prediction::GenerateRomanTypoCandidates(raw);
+  // Only the dangling letters are changed.
+  std::erase_if(candidates, [&](const prediction::RomanTypoCandidate& c) {
+    return c.romaji.size() < fixed_prefix ||
+           absl::string_view(c.romaji).substr(0, fixed_prefix) !=
+               absl::string_view(raw).substr(0, fixed_prefix);
+  });
+  prediction::TypoHabitStore* habits = prediction::TypoHabitStore::Get();
+  for (prediction::RomanTypoCandidate& c : candidates) {
+    c.cost = std::max(0.0f, c.cost + habits->CostAdjustment(c.edit));
+  }
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [](const prediction::RomanTypoCandidate& a,
+                      const prediction::RomanTypoCandidate& b) {
+                     return a.cost < b.cost;
+                   });
+
+  Segment* top_segment = segments_.mutable_conversion_segment(0);
+  if (top_segment->candidates_size() == 0) {
+    return false;
+  }
+  const uint32_t span = segments_.conversion_segments_size();
+  size_t added = 0;
+  size_t checked = 0;
+  std::vector<std::string> seen_keys;
+  for (const prediction::RomanTypoCandidate& fix : candidates) {
+    if (added >= kMaxFixes || checked >= kMaxFixesToCheck) {
+      break;
+    }
+    ++checked;
+    composer::Composer fixed = composer;
+    fixed.EditErase();
+    fixed.SetInputMode(composer.GetInputMode());
+    fixed.InsertCharacter(fix.romaji);
+    // The fix must leave no pending romaji.
+    if (TrailingAsciiLetters(fixed.GetStringForPreedit()) != 0) {
+      continue;
+    }
+    const std::string fixed_key = fixed.GetQueryForConversion();
+    if (fixed_key.empty() ||
+        std::find(seen_keys.begin(), seen_keys.end(), fixed_key) !=
+            seen_keys.end()) {
+      continue;
+    }
+    seen_keys.push_back(fixed_key);
+
+    ConversionRequest::Options options;
+    options.request_type = ConversionRequest::CONVERSION;
+    options.enable_user_history_for_conversion =
+        conversion_preferences_.use_history;
+    const ConversionRequest fixed_request =
+        ConversionRequestBuilder()
+            .SetComposer(fixed)
+            .SetRequestView(*request_)
+            .SetContextView(context)
+            .SetConfigView(*config_)
+            .SetOptions(std::move(options))
+            .Build();
+    Segments fixed_segments;
+    if (!converter_->StartConversion(fixed_request, &fixed_segments) ||
+        fixed_segments.conversion_segments_size() == 0) {
+      continue;
+    }
+    std::string key;
+    std::string value;
+    bool complete = true;
+    for (const Segment& segment : fixed_segments.conversion_segments()) {
+      if (segment.candidates_size() == 0) {
+        complete = false;
+        break;
+      }
+      key.append(segment.key());
+      value.append(segment.candidate(0).value);
+    }
+    if (!complete || value.empty()) {
+      continue;
+    }
+
+    auto candidate = std::make_unique<converter::Candidate>(
+        fixed_segments.conversion_segment(0).candidate(0));
+    candidate->key = key;
+    candidate->content_key = key;
+    candidate->value = value;
+    candidate->content_value = value;
+    candidate->converted_segment_count = span;
+    candidate->inner_segment_boundary = converter::InnerSegmentBoundary();
+    candidate->proper_noun_spans.clear();
+    candidate->attributes &= ~converter::Attribute::BEST_CANDIDATE;
+    candidate->attributes |= converter::Attribute::TYPING_CORRECTION;
+    candidate->description = "補正";
+    candidate->a11y_description.clear();
+    candidate->display_value.clear();
+    // The fix becomes the visible one; the typed text stays second.
+    top_segment->insert_candidate(0, std::move(candidate));
+    habits->Remember(raw, key, fix.edit);
+    ++added;
+  }
+  if (added == 0) {
+    return false;
+  }
+  if (!selected_candidate_indices_.empty()) {
+    selected_candidate_indices_[0] = 0;
+  }
+  if (segment_index_ == 0) {
+    UpdateCandidateList();
+    candidate_list_.MoveToId(0);
+  }
+  return true;
 }
 
 void EngineConverter::MaybeLearnTypingCorrection(

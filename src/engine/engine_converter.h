@@ -178,6 +178,11 @@ class EngineConverter : public EngineConverterInterface {
   // Mozlumi: learns the user's typo habit when a corrected candidate is
   // committed.
   void MaybeLearnTypingCorrection(const composer::Composer& composer);
+  // Mozlumi: when the composition ends with romaji that could not become kana
+  // (e.g. "よくやry" for "yokuyary"), puts the conversion of the most
+  // plausible fix ("よくやる") first. Returns true if a fix was added.
+  bool AddDanglingRomajiFix(const composer::Composer& composer,
+                            const commands::Context& context);
 
   size_t InsertExternalSegmentCandidates(
       absl::Span<const ExternalSegmentCandidate> candidates,

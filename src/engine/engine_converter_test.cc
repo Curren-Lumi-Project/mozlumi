@@ -81,6 +81,7 @@ using ::mozc::config::Config;
 using ::testing::_;
 using ::testing::DoAll;
 using ::testing::Eq;
+using ::testing::Invoke;
 using ::testing::Mock;
 using ::testing::Pointee;
 using ::testing::Property;
@@ -1099,6 +1100,73 @@ TEST_F(EngineConverterTest, AddsTypingCorrectionCandidatesOnConversion) {
     EXPECT_NE(output.candidate_window().candidate(i).value(), "すんかい");
     EXPECT_NE(output.candidate_window().candidate(i).value(), "深海探査船の");
   }
+}
+
+TEST_F(EngineConverterTest, PutsDanglingRomajiFixFirst) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  // "よくやる" typed with "y" (next to "u") at the end.
+  composer_->InsertCharacter("yokuyary");
+  ASSERT_TRUE(composer_->GetStringForPreedit().ends_with("ry"));
+
+  // The mock converts any reading to itself, in one segment.
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .Times(2)
+      .WillRepeatedly(
+          Invoke([](const ConversionRequest& request, Segments* segments) {
+            const std::string key = request.composer().GetQueryForConversion();
+            segments->Clear();
+            Segment* segment = segments->add_segment();
+            segment->set_key(key);
+            converter::Candidate* candidate = segment->add_candidate();
+            candidate->key = key;
+            candidate->content_key = key;
+            candidate->value = key;
+            candidate->content_value = key;
+            return true;
+          }));
+  ASSERT_TRUE(converter.Convert(*composer_));
+  converter.AddTypingCorrectionCandidates(*composer_,
+                                          commands::Context::default_instance());
+
+  {
+    commands::Output output;
+    converter.FillOutput(*composer_, &output);
+    EXPECT_EQ(output.preedit().segment(0).value(), "よくやる");
+  }
+  // The typed text is the second candidate.
+  converter.CandidateNext(*composer_);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  ASSERT_TRUE(output.has_candidate_window());
+  EXPECT_EQ(output.candidate_window().candidate(0).value(), "よくやる");
+  EXPECT_EQ(output.candidate_window().candidate(0).annotation().description(),
+            "補正");
+  EXPECT_NE(output.preedit().segment(0).value(), "よくやる");
+}
+
+TEST_F(EngineConverterTest, KeepsSingleDanglingLetter) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  // One pending letter is often intended ("おk").
+  composer_->InsertCharacter("yokuyak");
+  const std::string key = composer_->GetQueryForConversion();
+  Segments segments;
+  Segment* segment = segments.add_segment();
+  segment->set_key(key);
+  converter::Candidate* candidate = segment->add_candidate();
+  candidate->key = key;
+  candidate->content_key = key;
+  candidate->value = key;
+  candidate->content_value = key;
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+  ASSERT_TRUE(converter.Convert(*composer_));
+  converter.AddTypingCorrectionCandidates(*composer_,
+                                          commands::Context::default_instance());
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  EXPECT_EQ(output.preedit().segment(0).value(), key);
 }
 
 TEST_F(EngineConverterTest, InsertExternalSegmentCandidates) {

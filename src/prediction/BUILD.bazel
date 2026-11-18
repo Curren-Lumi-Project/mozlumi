@@ -987,6 +987,7 @@ mozc_cc_library(
     name = "roman_typo_candidates",
     srcs = ["roman_typo_candidates.cc"],
     hdrs = ["roman_typo_candidates.h"],
+    visibility = ["//engine:__pkg__"],
 )
 
 mozc_cc_test(
