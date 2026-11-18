@@ -4574,6 +4574,32 @@ TEST_F(UserHistoryPredictorTest, SentenceWithTrailingPunctuationDesktop) {
   EXPECT_TRUE(FindCandidateByValue("今日はいい天気で雨は降りません", results));
 }
 
+// A learned sentence that is a shorter candidate plus hiragana
+// (「今日は」+「いいね」) is still suggested on desktop.
+TEST_F(UserHistoryPredictorTest, SentenceEndingWithHiraganaDesktop) {
+  UserHistoryPredictor* predictor = GetUserHistoryPredictorWithClearedHistory();
+
+  SegmentsProxy segments_proxy;
+  std::vector<Result> results;
+
+  const ConversionRequest convreq1 =
+      SetUpInputForConversion("きょうは", &composer_, &segments_proxy);
+  segments_proxy.AddCandidate(0, "今日は");
+  segments_proxy.AddSegment("いいね");
+  segments_proxy.AddCandidate(1, "いいね");
+  segments_proxy.AddSegment("。");
+  segments_proxy.AddCandidate(2, "。");
+
+  predictor->Finish(convreq1, segments_proxy.MakeLearningResults(), kRevertId);
+
+  segments_proxy.Clear();
+  const ConversionRequest convreq2 =
+      SetUpInputForSuggestion("きょう", &composer_, &segments_proxy);
+  results = predictor->Predict(convreq2);
+  EXPECT_TRUE(FindCandidateByValue("今日は", results));
+  EXPECT_TRUE(FindCandidateByValue("今日はいいね", results));
+}
+
 // The punctuation alone as the last segment: the rest is learned.
 TEST_F(UserHistoryPredictorTest, SentenceWithPunctuationSegmentDesktop) {
   UserHistoryPredictor* predictor = GetUserHistoryPredictorWithClearedHistory();

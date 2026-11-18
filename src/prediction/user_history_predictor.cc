@@ -1829,7 +1829,29 @@ std::vector<Result> UserHistoryPredictor::MakeResults(
     return starts_with(target, inserted);
   };
 
+  // Mozlumi: on desktop, a learned whole sentence is kept even when it is a
+  // shorter candidate plus hiragana (「今日はいい天気」+「ですね」), and it is
+  // not replaced by such a shorter candidate.
+  auto is_learned_sentence = [](const Entry* entry) {
+    return (entry->attributes() & Attribute::LEARNED_SENTENCE) != 0;
+  };
+  const bool keep_learned_sentences =
+      !IsMixedConversionEnabled(request) && !request.key().empty() &&
+      (request.request_type() == ConversionRequest::SUGGESTION ||
+       request.request_type() == ConversionRequest::PREDICTION);
+  auto is_kept_sentence = [&](const Entry* entry) {
+    return keep_learned_sentences && is_learned_sentence(entry);
+  };
+  auto has_same_value = [&](const Entry& entry) {
+    return absl::c_any_of(entries, [&](const Entry* inserted_entry) {
+      return inserted_entry->value() == entry.value();
+    });
+  };
+
   auto is_redandant_entry = [&](const Entry& entry) {
+    if (is_kept_sentence(&entry)) {
+      return has_same_value(entry);
+    }
     return absl::c_any_of(entries, [&](const Entry* inserted_entry) {
       return is_redandant(entry.value(), inserted_entry->value());
     });
@@ -1838,7 +1860,8 @@ std::vector<Result> UserHistoryPredictor::MakeResults(
   // Replace `entry` with the one entry in `entries`.
   auto maybe_replace_entry = [&](const Entry* entry) {
     auto it = absl::c_find_if(entries, [&](const Entry* inserted_entry) {
-      return starts_with(inserted_entry->value(), entry->value());
+      return !is_kept_sentence(inserted_entry) &&
+             starts_with(inserted_entry->value(), entry->value());
     });
     if (it == entries.end()) {
       return false;
@@ -1888,20 +1911,12 @@ std::vector<Result> UserHistoryPredictor::MakeResults(
   // shorter first, so a learned whole sentence is pushed out by its own
   // segments ("今日は", "今日はいい天気", ...). Like ATOK, keep the best learned
   // sentence in the list by replacing the last entry.
-  auto is_learned_sentence = [](const Entry* entry) {
-    return (entry->attributes() & Attribute::LEARNED_SENTENCE) != 0;
-  };
-  if (!IsMixedConversionEnabled(request) && !request.key().empty() &&
-      (request.request_type() == ConversionRequest::SUGGESTION ||
-       request.request_type() == ConversionRequest::PREDICTION) &&
-      max_prediction_size >= 2 && entries.size() == max_prediction_size &&
+  if (keep_learned_sentences && max_prediction_size >= 2 &&
+      entries.size() == max_prediction_size &&
       absl::c_none_of(entries, is_learned_sentence)) {
     while (const Entry* sentence = entry_queue.Pop()) {
       if (!is_learned_sentence(sentence) ||
-          !Util::IsValidUtf8(sentence->value()) ||
-          absl::c_any_of(entries, [&](const Entry* e) {
-            return e->value() == sentence->value();
-          })) {
+          !Util::IsValidUtf8(sentence->value()) || has_same_value(*sentence)) {
         continue;
       }
       entries.back() = sentence;
