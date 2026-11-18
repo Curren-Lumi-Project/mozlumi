@@ -48,6 +48,13 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 
 辞書の語に人工的な打ち間違いを入れた評価（調整に使っていない検証用データ、同梱辞書）では、補正候補 3 件以内に目的の語が入った割合は 94.5%、正しく打っている途中で補正候補が出た割合は 0.8% でした。並び順は簡易的な再現による数値で、実際の表示とは異なる場合があります。
 
+#### 入力履歴からの文のサジェスト
+
+Space で変換して確定した文（2 文節以上）を覚えて、次に打ち始めたときにサジェスト・予測候補に出します（Mozc の入力履歴からのサジェストを調整しています）。
+
+- 「。」「？」などの句読点で終わる文は、Mozc では覚えませんでしたが、Mozlumi では句読点を除いて覚えます（例: 「今日はいい天気で雨は降りません。」→「今日はいい天気で雨は降りません」）
+- 同時に覚えた短い文節（「今日は」など）に押し出されないよう、覚えた文を 1 件は必ず候補に残します
+
 #### AI変換（Zenz）
 
 Space で変換すると、ローカルの AI（Zenz）が裏で同じ文を変換し、通常の変換と違う部分があれば「AI」の印付きで 2 番目の候補に加えます。通常の変換結果は変わらないので、AI が外れても入力の邪魔になりません。
@@ -158,6 +165,13 @@ Mozlumi guesses one-keystroke typos in romaji input and adds corrected candidate
 - Enabled by default. It can be turned on or off on the Suggest tab of the settings (the checkbox label is in Japanese: 「ローマ字の打ち間違いを補正する（誤入力補正）」)
 
 In an evaluation with synthetic typos of dictionary words (held-out data, bundled dictionaries), the intended word was among the corrected candidates (up to 3) in 94.5% of cases, and corrections appeared while typing correctly in 0.8% of cases. The ranking was simplified in the evaluation, so actual results may differ.
+
+#### Sentence suggestions from input history
+
+Sentences of two or more segments that you convert with Space and commit are remembered and offered in suggestions and predictions when you start typing them again (an adjustment of Mozc's input history suggestions).
+
+- Sentences ending with punctuation such as 「。」 or 「？」, which Mozc did not remember, are remembered without the punctuation
+- At least one remembered sentence is always kept in the list, so that it is not pushed out by its own shorter segments (such as 「今日は」)
 
 #### AI conversion (Zenz)
 

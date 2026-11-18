@@ -1270,6 +1270,9 @@ bool UserHistoryPredictor::LookupEntry(
       // This scenario is a simple prefix match.
       // e.g., |request_key|="foo", |entry.key()|="foobar"
       result = AddEntry(entry, entry_queue);
+      if (entry.inner_segment_boundary_size() >= 2) {
+        SetAttribute(*result, Attribute::LEARNED_SENTENCE);
+      }
       last_entry = &entry;
       break;
     case MatchType::RIGHT_PREFIX_MATCH: {
@@ -1423,6 +1426,8 @@ bool UserHistoryPredictor::LookupEntry(
       Entry* result2 =
           AddEntryWithNewKeyValue(request, std::move(key), std::move(value),
                                   inner_segment_boundary, *result, entry_queue);
+      // A joined result is not a sentence the user committed.
+      RemoveAttribute(*result2, Attribute::LEARNED_SENTENCE);
       if (!result2->removed()) {
         entry_queue.Push(result2);
       }
@@ -1877,6 +1882,31 @@ std::vector<Result> UserHistoryPredictor::MakeResults(
 
     entries.emplace_back(result_entry);
     inserted_char_coverage += value_len;
+  }
+
+  // Mozlumi: on desktop, entries committed at the same time are ranked
+  // shorter first, so a learned whole sentence is pushed out by its own
+  // segments ("今日は", "今日はいい天気", ...). Like ATOK, keep the best learned
+  // sentence in the list by replacing the last entry.
+  auto is_learned_sentence = [](const Entry* entry) {
+    return (entry->attributes() & Attribute::LEARNED_SENTENCE) != 0;
+  };
+  if (!IsMixedConversionEnabled(request) && !request.key().empty() &&
+      (request.request_type() == ConversionRequest::SUGGESTION ||
+       request.request_type() == ConversionRequest::PREDICTION) &&
+      max_prediction_size >= 2 && entries.size() == max_prediction_size &&
+      absl::c_none_of(entries, is_learned_sentence)) {
+    while (const Entry* sentence = entry_queue.Pop()) {
+      if (!is_learned_sentence(sentence) ||
+          !Util::IsValidUtf8(sentence->value()) ||
+          absl::c_any_of(entries, [&](const Entry* e) {
+            return e->value() == sentence->value();
+          })) {
+        continue;
+      }
+      entries.back() = sentence;
+      break;
+    }
   }
 
   std::vector<Result> results;
@@ -2427,6 +2457,78 @@ void UserHistoryPredictor::InsertHistoryForHistorySegments(
   }
 }
 
+void UserHistoryPredictor::InsertSentenceWithoutTrailingPunctuation(
+    const ConversionRequest& request, uint64_t last_access_time,
+    const SegmentsForLearning& learning_segments,
+    UserHistoryPredictor::RevertEntries& revert_entries) {
+  const std::vector<SegmentForLearning>& segments =
+      learning_segments.conversion_segments;
+  if (segments.empty()) {
+    return;
+  }
+
+  // Strips the trailing punctuation from the last segment. The reading of a
+  // punctuation is the punctuation itself, so both the key and the value end
+  // with it.
+  absl::string_view last_key = segments.back().key;
+  absl::string_view last_value = segments.back().value;
+  while (!last_key.empty() && !last_value.empty() &&
+         EndsWithPunctuation(last_value)) {
+    size_t value_len = 0;
+    for (absl::string_view p : kPunctuations) {
+      if (absl::EndsWith(last_value, p)) {
+        value_len = p.size();
+        break;
+      }
+    }
+    size_t key_len = 0;
+    for (absl::string_view p : kPunctuations) {
+      if (absl::EndsWith(last_key, p)) {
+        key_len = p.size();
+        break;
+      }
+    }
+    if (key_len == 0) {
+      // The reading does not end with the punctuation; give up.
+      return;
+    }
+    last_value.remove_suffix(value_len);
+    last_key.remove_suffix(key_len);
+  }
+
+  // The remaining segments: all but the last, plus the stripped last one.
+  const size_t size = last_value.empty() ? segments.size() - 1
+                                         : segments.size();
+  if (size < 2 || (last_value.empty() != last_key.empty())) {
+    // A single segment is learned as a segment entry.
+    return;
+  }
+
+  std::string key, value;
+  converter::InnerSegmentBoundaryBuilder builder;
+  for (size_t i = 0; i < size; ++i) {
+    const SegmentForLearning& segment = segments[i];
+    absl::string_view seg_key = segment.key;
+    absl::string_view seg_value = segment.value;
+    if (i + 1 == segments.size()) {
+      seg_key = last_key;
+      seg_value = last_value;
+    }
+    absl::StrAppend(&key, seg_key);
+    absl::StrAppend(&value, seg_value);
+    builder.Add(seg_key.size(), seg_value.size(),
+                std::min(segment.content_key.size(), seg_key.size()),
+                std::min(segment.content_value.size(), seg_value.size()));
+  }
+  if (EndsWithPunctuation(value)) {
+    return;
+  }
+  const converter::InnerSegmentBoundary boundary = builder.Build(key, value);
+  Insert(request, 0, 0, key, value, "", boundary, {},
+         learning_segments.allow_partial_match, last_access_time,
+         revert_entries);
+}
+
 void UserHistoryPredictor::InsertHistoryForConversionSegments(
     const ConversionRequest& request, uint64_t last_access_time,
     const SegmentsForLearning& learning_segments,
@@ -2434,11 +2536,20 @@ void UserHistoryPredictor::InsertHistoryForConversionSegments(
   // Inserts all_key/all_value.
   // We don't insert it for mobile.
   if (learning_segments.conversion_segments.size() > 1) {
-    Insert(request, 0, 0, learning_segments.conversion_segments_key,
-           learning_segments.conversion_segments_value, "",
-           learning_segments.inner_segment_boundary, {},
-           learning_segments.allow_partial_match, /* allow_partial_match */
-           last_access_time, revert_entries);
+    absl::string_view all_value = learning_segments.conversion_segments_value;
+    if (StartsWithValidLetter(all_value) && EndsWithPunctuation(all_value)) {
+      // Mozlumi: a sentence ending with punctuation ("今日はいい天気です。")
+      // used to be dropped by Insert() (same condition as there). Learn it
+      // without the punctuation.
+      InsertSentenceWithoutTrailingPunctuation(
+          request, last_access_time, learning_segments, revert_entries);
+    } else {
+      Insert(request, 0, 0, learning_segments.conversion_segments_key,
+             learning_segments.conversion_segments_value, "",
+             learning_segments.inner_segment_boundary, {},
+             learning_segments.allow_partial_match, /* allow_partial_match */
+             last_access_time, revert_entries);
+    }
   }
 
   absl::flat_hash_set<std::vector<uint64_t>> seen;

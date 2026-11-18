@@ -201,6 +201,11 @@ class UserHistoryPredictor : public PredictorInterface {
     // boundary. Special care is needed when a single segment placeholder
     // is used as the inner boundary for such entries.
     EMPTY_INNER_SEGMENT_BOUNDARY = 16,
+
+    // Mozlumi: a whole sentence (two or more segments) that the user
+    // committed at once, found by a simple prefix match. On desktop, one of
+    // these is always kept in the suggestions.
+    LEARNED_SENTENCE = 32,
   };
 
   // Returns true if this predictor should return results for the input.
@@ -442,6 +447,13 @@ class UserHistoryPredictor : public PredictorInterface {
                      RevertEntries& revert_entries);
 
   void InsertHistoryForHistorySegments(
+      const ConversionRequest& request, uint64_t last_access_time,
+      const SegmentsForLearning& learning_segments,
+      RevertEntries& revert_entries);
+
+  // Mozlumi: learns a multi-segment sentence that ends with punctuation
+  // without the punctuation.
+  void InsertSentenceWithoutTrailingPunctuation(
       const ConversionRequest& request, uint64_t last_access_time,
       const SegmentsForLearning& learning_segments,
       RevertEntries& revert_entries);

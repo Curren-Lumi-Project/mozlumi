@@ -4537,6 +4537,68 @@ TEST_F(UserHistoryPredictorTest, JoinedSegmentsTestDesktop) {
   segments_proxy.Clear();
 }
 
+// Mozlumi: a sentence of several segments that ends with punctuation is
+// learned without the punctuation, and on desktop it stays in the
+// suggestions even though its own segments are shorter.
+TEST_F(UserHistoryPredictorTest, SentenceWithTrailingPunctuationDesktop) {
+  UserHistoryPredictor* predictor = GetUserHistoryPredictorWithClearedHistory();
+
+  SegmentsProxy segments_proxy;
+  std::vector<Result> results;
+
+  const ConversionRequest convreq1 =
+      SetUpInputForConversion("きょうは", &composer_, &segments_proxy);
+  segments_proxy.AddCandidate(0, "今日は");
+  segments_proxy.AddSegment("いいてんきで");
+  segments_proxy.AddCandidate(1, "いい天気で");
+  segments_proxy.AddSegment("あめは");
+  segments_proxy.AddCandidate(2, "雨は");
+  segments_proxy.AddSegment("ふりません。");
+  segments_proxy.AddCandidate(3, "降りません。");
+
+  predictor->Finish(convreq1, segments_proxy.MakeLearningResults(), kRevertId);
+
+  segments_proxy.Clear();
+  const ConversionRequest convreq2 =
+      SetUpInputForSuggestion("きょう", &composer_, &segments_proxy);
+  results = predictor->Predict(convreq2);
+  EXPECT_LE(results.size(), 3);
+  EXPECT_TRUE(FindCandidateByValue("今日はいい天気で雨は降りません", results));
+  EXPECT_FALSE(
+      FindCandidateByValue("今日はいい天気で雨は降りません。", results));
+
+  segments_proxy.Clear();
+  const ConversionRequest convreq3 =
+      SetUpInputForPrediction("きょうはいい", &composer_, &segments_proxy);
+  results = predictor->Predict(convreq3);
+  EXPECT_TRUE(FindCandidateByValue("今日はいい天気で雨は降りません", results));
+}
+
+// The punctuation alone as the last segment: the rest is learned.
+TEST_F(UserHistoryPredictorTest, SentenceWithPunctuationSegmentDesktop) {
+  UserHistoryPredictor* predictor = GetUserHistoryPredictorWithClearedHistory();
+
+  SegmentsProxy segments_proxy;
+  std::vector<Result> results;
+
+  const ConversionRequest convreq1 =
+      SetUpInputForConversion("あしたは", &composer_, &segments_proxy);
+  segments_proxy.AddCandidate(0, "明日は");
+  segments_proxy.AddSegment("はれですか");
+  segments_proxy.AddCandidate(1, "晴れですか");
+  segments_proxy.AddSegment("?");
+  segments_proxy.AddCandidate(2, "？");
+
+  predictor->Finish(convreq1, segments_proxy.MakeLearningResults(), kRevertId);
+
+  segments_proxy.Clear();
+  const ConversionRequest convreq2 =
+      SetUpInputForSuggestion("あした", &composer_, &segments_proxy);
+  results = predictor->Predict(convreq2);
+  EXPECT_TRUE(FindCandidateByValue("明日は晴れですか", results));
+  EXPECT_FALSE(FindCandidateByValue("明日は晴れですか？", results));
+}
+
 TEST_F(UserHistoryPredictorTest, PunctuationLink) {
   UserHistoryPredictor* predictor = GetUserHistoryPredictorWithClearedHistory();
   request_test_util::FillMobileRequest(&request_);
