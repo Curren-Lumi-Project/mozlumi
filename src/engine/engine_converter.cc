@@ -61,6 +61,7 @@
 #include "engine/contextual_candidate_reranker.h"
 #include "engine/engine_converter_interface.h"
 #include "engine/engine_output.h"
+#include "engine/sentence_typo_corrector.h"
 #include "protocol/candidate_window.pb.h"
 #include "prediction/roman_typo_candidates.h"
 #include "prediction/typo_habit_store.h"
@@ -264,6 +265,7 @@ bool EngineConverter::Convert(const composer::Composer& composer,
                               const ConversionPreferences& preferences) {
   DCHECK(CheckState(COMPOSITION | SUGGESTION | CONVERSION));
   focused_suggestion_for_learning_ = false;
+  typing_correction_offered_ = false;
 
   DCHECK(request_);
   DCHECK(config_);
@@ -1221,6 +1223,9 @@ void EngineConverter::AddTypingCorrectionCandidates(
   if (AddDanglingRomajiFix(composer, context)) {
     return;
   }
+  if (AddSentenceTypoFixes(composer, context)) {
+    return;
+  }
   const std::string key = composer.GetQueryForConversion();
   const size_t key_len = Util::CharsLen(key);
 
@@ -1437,6 +1442,84 @@ bool EngineConverter::AddDanglingRomajiFix(const composer::Composer& composer,
   if (segment_index_ == 0) {
     UpdateCandidateList();
     candidate_list_.MoveToId(0);
+  }
+  return true;
+}
+
+bool EngineConverter::AddSentenceTypoFixes(const composer::Composer& composer,
+                                           const commands::Context& context) {
+  // Tuned with eval/analyze_sent.py on phrases from the bundled Aozora text:
+  // the right fix is offered for about half of the broken conversions, and
+  // about 5% of correctly typed phrases get an extra candidate (the
+  // conversion itself never changes).
+  constexpr size_t kMaxOffers = 2;
+  SentenceTypoOptions options;
+  options.max_conversions = 48;
+  SentenceTypoDecision decision;
+  decision.cost_per_typo = 2000.0f;
+  decision.margin = 4000;
+
+  Segment* top_segment = segments_.mutable_conversion_segment(0);
+  if (top_segment->candidates_size() == 0) {
+    return false;
+  }
+  prediction::TypoHabitStore* habits = prediction::TypoHabitStore::Get();
+  const SentenceTypoAnalysis analysis = AnalyzeSentenceTypos(
+      *converter_, composer, segments_, *request_, *config_, context,
+      conversion_preferences_.use_history, options, habits);
+  const std::vector<size_t> offers =
+      RankSentenceTypoOffers(analysis, decision, kMaxOffers);
+  if (offers.empty()) {
+    return false;
+  }
+
+  const std::string raw = composer.GetRawString();
+  const uint32_t span = segments_.conversion_segments_size();
+  int position = 1;
+  for (const size_t index : offers) {
+    const SentenceTypoCandidate& fix = analysis.candidates[index];
+    bool duplicated = false;
+    for (size_t j = 0; j < top_segment->candidates_size(); ++j) {
+      const converter::Candidate& existing = top_segment->candidate(j);
+      if (existing.value == fix.value &&
+          existing.effective_converted_segment_count() == span) {
+        duplicated = true;
+        break;
+      }
+    }
+    if (duplicated) {
+      continue;
+    }
+    auto candidate =
+        std::make_unique<converter::Candidate>(top_segment->candidate(0));
+    candidate->key = fix.key;
+    candidate->content_key = fix.key;
+    candidate->value = fix.value;
+    candidate->content_value = fix.value;
+    candidate->converted_segment_count = span;
+    candidate->inner_segment_boundary = converter::InnerSegmentBoundary();
+    candidate->proper_noun_spans.clear();
+    candidate->attributes &= ~converter::Attribute::BEST_CANDIDATE;
+    candidate->attributes |= converter::Attribute::TYPING_CORRECTION;
+    candidate->description = "補正";
+    candidate->a11y_description.clear();
+    candidate->display_value.clear();
+    top_segment->insert_candidate(
+        std::min<int>(position, static_cast<int>(top_segment->candidates_size())),
+        std::move(candidate));
+    habits->Remember(raw, fix.key, fix.edit);
+    ++position;
+  }
+  const int added = position - 1;
+  if (added == 0) {
+    return false;
+  }
+  typing_correction_offered_ = true;
+  if (segment_index_ == 0) {
+    const int focused_id = candidate_list_.focused_id();
+    UpdateCandidateList();
+    candidate_list_.MoveToId(focused_id >= 1 ? focused_id + added
+                                             : focused_id);
   }
   return true;
 }
@@ -2390,6 +2473,9 @@ void EngineConverter::FillOutput(const composer::Composer& composer,
   } else if (CheckState(PREDICTION | CONVERSION)) {
     // Conversion on Prediction or Conversion
     FillConversion(output->mutable_preedit());
+    if (CheckState(CONVERSION) && typing_correction_offered_) {
+      output->set_typing_correction_available(true);
+    }
   }
   // Candidate list
   if (CheckState(SUGGESTION | PREDICTION | CONVERSION) &&
@@ -2441,6 +2527,7 @@ void EngineConverter::ResetResult() { result_.Clear(); }
 
 void EngineConverter::ResetState() {
   focused_suggestion_for_learning_ = false;
+  typing_correction_offered_ = false;
   state_ = COMPOSITION;
   segment_index_ = 0;
   previous_suggestions_.clear();

@@ -45,6 +45,7 @@ NSString* Label(ConversionDisplayStatus status,
       case ConversionDisplayStatus::kZenzPending: return @"…";
       case ConversionDisplayStatus::kZenz: return @"AI";
       case ConversionDisplayStatus::kAiCandidate: return @"AI!";
+      case ConversionDisplayStatus::kTypoCandidate: return @"補";
       case ConversionDisplayStatus::kReading: return @"あ";
       default: return @"";
     }
@@ -54,6 +55,7 @@ NSString* Label(ConversionDisplayStatus status,
     case ConversionDisplayStatus::kZenzPending: return @"AI…";
     case ConversionDisplayStatus::kZenz: return @"AI";
     case ConversionDisplayStatus::kAiCandidate: return @"AI候補あり";
+    case ConversionDisplayStatus::kTypoCandidate: return @"補正あり";
     case ConversionDisplayStatus::kReading: return @"入力中";
     default: return @"";
   }

@@ -144,6 +144,28 @@ TEST(ConversionStatusIndicatorTest, AiCandidateStatus) {
                                   config.conversion_status_indicator_style()),
             0xf39800u);
 }
+TEST(ConversionStatusIndicatorTest, TypoCandidateStatus) {
+  auto out = PreeditOutput();
+  out.set_typing_correction_available(true);
+  EXPECT_EQ(ResolveConversionDisplayStatus(out),
+            ConversionDisplayStatus::kTypoCandidate);
+  // The AI badge takes precedence.
+  out.set_ai_candidate_available(true);
+  EXPECT_EQ(ResolveConversionDisplayStatus(out),
+            ConversionDisplayStatus::kAiCandidate);
+  out.set_ai_candidate_available(false);
+  // Kept while the candidate list is open.
+  auto* candidates = out.mutable_candidate_window();
+  candidates->set_category(commands::CONVERSION);
+  candidates->add_candidate()->set_value("candidate");
+  candidates->set_focused_index(0);
+  EXPECT_FALSE(ShouldHideConversionStatusForCandidate(out, true));
+
+  config::Config config;
+  EXPECT_EQ(ConversionStatusColor(ConversionDisplayStatus::kTypoCandidate,
+                                  config.conversion_status_indicator_style()),
+            0x8e5cc4u);
+}
 TEST(ConversionStatusIndicatorTest, AutoAboveCompositionWithoutRuby) {
   config::Config::ConversionStatusIndicatorStyle style;
   Rect result;

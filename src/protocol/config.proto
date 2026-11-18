@@ -815,6 +815,8 @@ message Config {
     optional uint32 opacity_percent = 15 [default = 93];
     // Mozlumi: "AI candidate available" (Curren Lumi orange).
     optional uint32 ai_candidate_color = 5000 [default = 0xf39800];
+    // Mozlumi: a typing correction was added as a candidate ("補正あり").
+    optional uint32 typo_candidate_color = 5001 [default = 0x8e5cc4];
     optional uint32 shadow_size = 16 [default = 3];
     optional uint32 shadow_opacity_percent = 17 [default = 12];
     optional uint32 shadow_angle_degrees = 18 [default = 45];

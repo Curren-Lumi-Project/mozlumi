@@ -1074,8 +1074,10 @@ TEST_F(EngineConverterTest, AddsTypingCorrectionCandidatesOnConversion) {
     // Much longer than what the user typed: not added.
     add("しんかいたんさせんの", "深海探査船の", true);
   }
+  // Later conversions are the sentence-level typo checks; converting to the
+  // same text, they add nothing.
   EXPECT_CALL(*mock_converter, StartConversion(_, _))
-      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+      .WillRepeatedly(DoAll(SetArgPointee<1>(segments), Return(true)));
   EXPECT_CALL(*mock_converter, StartPrediction(_, _))
       .WillOnce(DoAll(SetArgPointee<1>(predicted), Return(true)));
   ASSERT_TRUE(converter.Convert(*composer_));
@@ -1162,13 +1164,55 @@ TEST_F(EngineConverterTest, KeepsSingleDanglingLetter) {
   candidate->value = key;
   candidate->content_value = key;
   EXPECT_CALL(*mock_converter, StartConversion(_, _))
-      .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+      .WillRepeatedly(DoAll(SetArgPointee<1>(segments), Return(true)));
   ASSERT_TRUE(converter.Convert(*composer_));
   converter.AddTypingCorrectionCandidates(*composer_,
                                           commands::Context::default_instance());
   commands::Output output;
   converter.FillOutput(*composer_, &output);
   EXPECT_EQ(output.preedit().segment(0).value(), key);
+}
+
+TEST_F(EngineConverterTest, OffersSentenceTypoFixSecond) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  // "さかなをたべる" with "w" typed as the neighbor "e".
+  composer_->InsertCharacter("sakanaeotaberu");
+
+  // The mock converts any reading to itself; only the intended reading is
+  // natural (low cost).
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(
+          Invoke([](const ConversionRequest& request, Segments* segments) {
+            const std::string key = request.composer().GetQueryForConversion();
+            segments->Clear();
+            Segment* segment = segments->add_segment();
+            segment->set_key(key);
+            converter::Candidate* candidate = segment->add_candidate();
+            candidate->key = key;
+            candidate->content_key = key;
+            candidate->value = key == "さかなをたべる" ? "魚を食べる" : key;
+            candidate->content_value = candidate->value;
+            candidate->cost = key == "さかなをたべる" ? 1000 : 20000;
+            return true;
+          }));
+  ASSERT_TRUE(converter.Convert(*composer_));
+  converter.AddTypingCorrectionCandidates(*composer_,
+                                          commands::Context::default_instance());
+  {
+    // The conversion itself is unchanged, and the badge is requested.
+    commands::Output output;
+    converter.FillOutput(*composer_, &output);
+    EXPECT_EQ(output.preedit().segment(0).value(), "さかなえおたべる");
+    EXPECT_TRUE(output.typing_correction_available());
+  }
+  converter.CandidateNext(*composer_);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  EXPECT_EQ(output.preedit().segment(0).value(), "魚を食べる");
+  ASSERT_TRUE(output.has_candidate_window());
+  EXPECT_EQ(output.candidate_window().candidate(1).annotation().description(),
+            "補正");
 }
 
 TEST_F(EngineConverterTest, InsertExternalSegmentCandidates) {

@@ -20,6 +20,8 @@ enum class ConversionDisplayStatus {
   kZenz,
   // Mozlumi: the AI conversion differs and is available as a candidate.
   kAiCandidate,
+  // Mozlumi: a typing correction is available as a candidate.
+  kTypoCandidate,
 };
 
 inline ConversionDisplayStatus ResolveConversionDisplayStatus(
@@ -35,6 +37,9 @@ inline ConversionDisplayStatus ResolveConversionDisplayStatus(
   }
   if (output.ai_candidate_available()) {
     return ConversionDisplayStatus::kAiCandidate;
+  }
+  if (output.typing_correction_available()) {
+    return ConversionDisplayStatus::kTypoCandidate;
   }
   if (output.live_conversion()) {
     return ConversionDisplayStatus::kMozc;
@@ -52,7 +57,8 @@ inline bool ShouldHideConversionStatusForCandidate(
   if (!candidate_window_visible) return false;
   // Mozlumi: keep the AI badges while choosing a candidate, so that the user
   // can see that the AI result is in the list (placed beside the list).
-  if (output.ai_candidate_available() || output.ai_candidate_applied()) {
+  if (output.ai_candidate_available() || output.ai_candidate_applied() ||
+      output.typing_correction_available()) {
     return false;
   }
   if (output.has_candidate_window()) {
@@ -76,6 +82,8 @@ inline uint32_t ConversionStatusColor(
     case ConversionDisplayStatus::kZenz: return style.zenz_color();
     case ConversionDisplayStatus::kAiCandidate:
       return style.ai_candidate_color();
+    case ConversionDisplayStatus::kTypoCandidate:
+      return style.typo_candidate_color();
     case ConversionDisplayStatus::kReading: return style.reading_color();
     case ConversionDisplayStatus::kHidden: return style.reading_color();
   }

@@ -1528,6 +1528,9 @@ message Output {
   // Mozlumi: the AI conversion differs and was made the top candidate
   // (Config.ai_candidate_first).
   optional bool ai_candidate_applied = 5001 [default = false];
+  // Mozlumi: a typing correction of the whole conversion was added as a
+  // candidate (the conversion status badge shows it).
+  optional bool typing_correction_available = 5002 [default = false];
 
   // Debug-only reason string. Normal UI should not display this.
   optional string zenz_live_correction_debug = 31;

@@ -59,7 +59,9 @@ struct SentenceTypoOptions {
   // Romaji shorter than this is left to the word-level corrector.
   size_t min_raw_length = 6;
   // At most this many fixes are converted (each is one conversion).
-  size_t max_conversions = 16;
+  size_t max_conversions = 48;
+  // Romaji longer than this is not corrected.
+  size_t max_raw_length = 64;
 };
 
 struct SentenceTypoCandidate {
@@ -110,6 +112,12 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
 std::optional<size_t> ChooseSentenceTypoFix(
     const SentenceTypoAnalysis& analysis,
     const SentenceTypoDecision& decision);
+
+// Returns up to `max_offers` candidates (indices, best first, distinct
+// values) that pass the decision.
+std::vector<size_t> RankSentenceTypoOffers(
+    const SentenceTypoAnalysis& analysis, const SentenceTypoDecision& decision,
+    size_t max_offers);
 
 }  // namespace engine
 }  // namespace mozc

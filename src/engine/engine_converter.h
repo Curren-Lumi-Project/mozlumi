@@ -183,6 +183,11 @@ class EngineConverter : public EngineConverterInterface {
   // plausible fix ("よくやる") first. Returns true if a fix was added.
   bool AddDanglingRomajiFix(const composer::Composer& composer,
                             const commands::Context& context);
+  // Mozlumi: offers fixes of a typo inside the phrase ("かけそば" typed
+  // "kakesiba") as the 2nd and 3rd candidates when their whole conversion
+  // is much more natural. Returns true if a fix was added.
+  bool AddSentenceTypoFixes(const composer::Composer& composer,
+                            const commands::Context& context);
 
   size_t InsertExternalSegmentCandidates(
       absl::Span<const ExternalSegmentCandidate> candidates,
@@ -509,6 +514,8 @@ class EngineConverter : public EngineConverterInterface {
 
   // Selected index data of each segments for usage stats.
   std::vector<int> selected_candidate_indices_;
+  // Mozlumi: a typing correction of the whole conversion was offered.
+  bool typing_correction_offered_ = false;
 
   // Indicates whether config_ will be updated by the command candidate.
   converter::Candidate::Command updated_command_;

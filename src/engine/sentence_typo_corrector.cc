@@ -110,6 +110,7 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
 
   const std::string raw = composer.GetRawString();
   if (raw.size() < options.min_raw_length ||
+      raw.size() > options.max_raw_length ||
       original.conversion_segments_size() == 0) {
     return analysis;
   }
@@ -141,7 +142,8 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
   };
 
   std::vector<prediction::RomanTypoCandidate> generated =
-      prediction::GenerateRomanTypoCandidates(raw);
+      prediction::GenerateRomanTypoCandidates(raw, options.min_raw_length,
+                                              options.max_raw_length);
   analysis.generated = generated.size();
   if (habits != nullptr) {
     for (prediction::RomanTypoCandidate& c : generated) {
@@ -248,6 +250,43 @@ std::optional<size_t> ChooseSentenceTypoFix(
     return best;
   }
   return std::nullopt;
+}
+
+std::vector<size_t> RankSentenceTypoOffers(
+    const SentenceTypoAnalysis& analysis, const SentenceTypoDecision& decision,
+    size_t max_offers) {
+  std::vector<std::pair<double, size_t>> scored;
+  if (analysis.worst_badness < decision.min_worst_badness) {
+    return {};
+  }
+  for (size_t i = 0; i < analysis.candidates.size(); ++i) {
+    const SentenceTypoCandidate& c = analysis.candidates[i];
+    if (c.value == analysis.value) {
+      continue;
+    }
+    const double score = static_cast<double>(c.sentence_cost) +
+                         decision.cost_per_typo * c.typo_cost;
+    if (score + static_cast<double>(decision.margin) <
+        static_cast<double>(analysis.sentence_cost)) {
+      scored.emplace_back(score, i);
+    }
+  }
+  std::stable_sort(scored.begin(), scored.end(),
+                   [](const auto& a, const auto& b) { return a.first < b.first; });
+  std::vector<size_t> result;
+  std::vector<absl::string_view> values;
+  for (const auto& [score, index] : scored) {
+    const std::string& value = analysis.candidates[index].value;
+    if (std::find(values.begin(), values.end(), value) != values.end()) {
+      continue;
+    }
+    values.push_back(value);
+    result.push_back(index);
+    if (result.size() >= max_offers) {
+      break;
+    }
+  }
+  return result;
 }
 
 }  // namespace engine
