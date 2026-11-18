@@ -63,7 +63,7 @@ ABSL_FLAG(int32_t, max_conversions, 64, "fixes converted per input");
 ABSL_FLAG(int32_t, second_round_seeds, 0, "fixes corrected once more");
 ABSL_FLAG(int32_t, second_round_conversions, 16,
           "fixes converted per seed in the second round");
-ABSL_FLAG(int32_t, conversion_candidates, 20,
+ABSL_FLAG(int32_t, conversion_candidates, 5,
           "candidates per segment when converting fixes (0: the usual 200)");
 ABSL_FLAG(bool, skip_slow_rewriters, true,
           "skip the slow rewriters when converting fixes");
