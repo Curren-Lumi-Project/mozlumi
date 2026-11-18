@@ -1293,9 +1293,11 @@ void EngineConverter::AddTypingCorrectionCandidates(
 
 namespace {
 
-// Number of trailing ASCII letters, i.e. romaji that is still pending in the
-// composition ("よくやry" -> 2).
-size_t TrailingAsciiLetters(absl::string_view s) {
+// Number of trailing Latin letters, i.e. romaji that is still pending in the
+// composition ("よくやry" -> 2). The preedit shows them in full width
+// ("よくやｒｙ") with the default character form, so both are counted.
+size_t TrailingAsciiLetters(absl::string_view preedit) {
+  const std::string s = japanese::FullWidthAsciiToHalfWidthAscii(preedit);
   size_t n = 0;
   while (n < s.size()) {
     const char c = s[s.size() - 1 - n];

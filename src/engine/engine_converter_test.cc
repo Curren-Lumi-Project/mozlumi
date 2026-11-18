@@ -1107,7 +1107,9 @@ TEST_F(EngineConverterTest, PutsDanglingRomajiFixFirst) {
   EngineConverter converter(mock_converter, request_, config_);
   // "よくやる" typed with "y" (next to "u") at the end.
   composer_->InsertCharacter("yokuyary");
-  ASSERT_TRUE(composer_->GetStringForPreedit().ends_with("ry"));
+  // Pending romaji is shown in full width with the default character form.
+  const std::string preedit = composer_->GetStringForPreedit();
+  ASSERT_TRUE(preedit.ends_with("ry") || preedit.ends_with("ｒｙ")) << preedit;
 
   // The mock converts any reading to itself, in one segment.
   EXPECT_CALL(*mock_converter, StartConversion(_, _))
