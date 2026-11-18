@@ -61,8 +61,13 @@ readonly LOCK_DIR="${STATE_DIR}/update.lock"
 
 typeset -g MODE='--manual'
 typeset -g WORK_DIR=''
+typeset -g PROGRESS_FILE=''
+typeset -g PROGRESS_PID=''
+typeset -g CURL_PID=''
 
 cleanup() {
+  [[ -n "${CURL_PID}" ]] && kill "${CURL_PID}" 2>/dev/null
+  progress_stop
   [[ -n "${WORK_DIR}" && -d "${WORK_DIR}" ]] && /bin/rm -rf "${WORK_DIR}"
   /bin/rmdir "${LOCK_DIR}" 2>/dev/null
 }
@@ -71,6 +76,7 @@ cleanup() {
 dialog() {
   local message=$1
   shift
+  progress_stop
   /usr/bin/osascript - "${message}" "$@" <<'APPLESCRIPT' 2>/dev/null
 on run argv
   set theMessage to item 1 of argv
@@ -85,6 +91,116 @@ on run argv
   end try
 end run
 APPLESCRIPT
+}
+
+# A small window with a progress bar, shown while updating. It is a separate
+# osascript process that follows PROGRESS_FILE, whose content is
+# "<fraction 0..1, or -1 for indeterminate><TAB><text>", or "quit".
+progress_start() {
+  PROGRESS_FILE="${WORK_DIR}/progress"
+  print -r -- $'-1\t準備中…' > "${PROGRESS_FILE}"
+  /usr/bin/osascript -l JavaScript - "${PROGRESS_FILE}" <<'JAVASCRIPT' >/dev/null 2>&1 &
+ObjC.import('Cocoa');
+function run(argv) {
+  const path = argv[0];
+  const app = $.NSApplication.sharedApplication;
+  app.setActivationPolicy(1);  // Accessory: no Dock icon.
+  const win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(
+      $.NSMakeRect(0, 0, 500, 96), 1 /* titled */, 2 /* buffered */, false);
+  win.title = 'Mozlumi';
+  win.level = 3;  // Floating.
+  const label = $.NSTextField.labelWithString('準備中…');
+  label.frame = $.NSMakeRect(20, 56, 460, 20);
+  const bar = $.NSProgressIndicator.alloc.initWithFrame(
+      $.NSMakeRect(20, 22, 460, 20));
+  bar.minValue = 0;
+  bar.maxValue = 1;
+  bar.indeterminate = true;
+  win.contentView.addSubview(label);
+  win.contentView.addSubview(bar);
+  win.center;
+  // Above the center, so that the password prompt does not cover it.
+  const frame = win.frame;
+  win.setFrameOrigin($.NSMakePoint(frame.origin.x, frame.origin.y + 160));
+  win.makeKeyAndOrderFront(null);
+  app.activateIgnoringOtherApps(true);
+  bar.startAnimation(null);
+  let last = '';
+  for (let i = 0; i < 36000; i++) {  // At most two hours.
+    const content = $.NSString.stringWithContentsOfFileEncodingError(
+        path, 4 /* UTF-8 */, null);
+    const text = content.isNil() ? 'quit' : content.js.trim();
+    if (text === 'quit') {
+      break;
+    }
+    if (text !== last) {
+      last = text;
+      const tab = text.indexOf('\t');
+      const fraction = parseFloat(text.slice(0, tab));
+      label.stringValue = text.slice(tab + 1);
+      if (fraction >= 0) {
+        bar.stopAnimation(null);
+        bar.indeterminate = false;
+        bar.doubleValue = Math.min(fraction, 1);
+      } else {
+        bar.indeterminate = true;
+        bar.startAnimation(null);
+      }
+    }
+    $.NSRunLoop.currentRunLoop.runUntilDate(
+        $.NSDate.dateWithTimeIntervalSinceNow(0.2));
+  }
+  win.close;
+}
+JAVASCRIPT
+  PROGRESS_PID=$!
+}
+
+# progress_set <fraction or -1> <text>
+progress_set() {
+  [[ -n "${PROGRESS_FILE}" ]] || return 0
+  print -r -- "$1"$'\t'"$2" > "${PROGRESS_FILE}.tmp" && \
+    /bin/mv -f "${PROGRESS_FILE}.tmp" "${PROGRESS_FILE}"
+}
+
+progress_stop() {
+  [[ -n "${PROGRESS_FILE}" ]] || return 0
+  print -r -- 'quit' > "${PROGRESS_FILE}.tmp" && \
+    /bin/mv -f "${PROGRESS_FILE}.tmp" "${PROGRESS_FILE}"
+  PROGRESS_FILE=''
+  if [[ -n "${PROGRESS_PID}" ]]; then
+    local i
+    for (( i = 0; i < 10; i++ )); do
+      kill -0 "${PROGRESS_PID}" 2>/dev/null || break
+      /bin/sleep 0.1
+    done
+    kill "${PROGRESS_PID}" 2>/dev/null
+    PROGRESS_PID=''
+  fi
+  return 0
+}
+
+# download <url> <output> <expected size or 0>: shows the progress meanwhile.
+download() {
+  local url=$1 output=$2 total=$3 size fraction
+  /usr/bin/curl -fsSL --max-time 900 -o "${output}" "${url}" &
+  CURL_PID=$!
+  while kill -0 "${CURL_PID}" 2>/dev/null; do
+    size=$(/usr/bin/stat -f%z "${output}" 2>/dev/null) || size=0
+    [[ "${size}" == <-> ]] || size=0
+    if (( total > 0 )); then
+      fraction=$(printf '%.3f' $(( size * 1.0 / total )))
+      progress_set "${fraction}" \
+        "ダウンロード中… $(( size / 1048576 )) / $(( total / 1048576 )) MB"
+    else
+      progress_set -1 "ダウンロード中… $(( size / 1048576 )) MB"
+    fi
+    /bin/sleep 0.3
+  done
+  wait "${CURL_PID}"
+  local result=$?
+  CURL_PID=''
+  return ${result}
 }
 
 # Reports to the user only in manual mode.
@@ -179,16 +295,19 @@ main() {
 
   # Find the PKG and its checksum among the release assets.
   local pkg_name='' pkg_url='' sha_url='' i name
-  local -a names urls
+  local pkg_size=0
+  local -a names urls sizes
   for (( i = 0; i < 50; i++ )); do
     name=$(json_value "${json}" "assets.${i}.name") || break
     names+=("${name}")
     urls+=("$(json_value "${json}" "assets.${i}.browser_download_url")")
+    sizes+=("$(json_value "${json}" "assets.${i}.size")")
   done
   for (( i = 1; i <= ${#names}; i++ )); do
     if [[ "${names[i]}" =~ '^Mozlumi_v[0-9.]+_build[0-9]+_macos_universal\.pkg$' ]]; then
       pkg_name=${names[i]}
       pkg_url=${urls[i]}
+      pkg_size=${sizes[i]}
     fi
   done
   for (( i = 1; i <= ${#names}; i++ )); do
@@ -218,11 +337,14 @@ main() {
   esac
 
   local pkg="${WORK_DIR}/${pkg_name}" sha="${WORK_DIR}/${pkg_name}.sha256"
-  if ! /usr/bin/curl -fsSL --max-time 900 -o "${pkg}" "${pkg_url}" || \
+  [[ "${pkg_size}" == <-> ]] || pkg_size=0
+  progress_start
+  if ! download "${pkg_url}" "${pkg}" "${pkg_size}" || \
      ! /usr/bin/curl -fsSL --max-time 60 -o "${sha}" "${sha_url}"; then
     dialog 'ダウンロードに失敗しました。あとでもう一度お試しください。' 'OK' >/dev/null
     return 1
   fi
+  progress_set -1 'ダウンロードしたファイルを確認しています…'
   local expected actual
   expected=$(/usr/bin/awk 'NR == 1 { print tolower($1) }' "${sha}")
   actual=$(/usr/bin/shasum -a 256 "${pkg}" | /usr/bin/awk '{ print $1 }')
@@ -238,6 +360,7 @@ main() {
     return 1
   fi
 
+  progress_set -1 'インストールしています…（管理者のパスワードを入力してください）'
   local result
   result=$(/usr/bin/osascript - "${pkg}" <<'APPLESCRIPT' 2>&1
 on run argv
@@ -246,7 +369,9 @@ on run argv
 end run
 APPLESCRIPT
 )
-  if (( $? != 0 )); then
+  local install_status=$?
+  progress_stop
+  if (( install_status != 0 )); then
     # -128: the user canceled the password prompt.
     [[ "${result}" == *'(-128)'* ]] && return 0
     dialog "更新に失敗しました。

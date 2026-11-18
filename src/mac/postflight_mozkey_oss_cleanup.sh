@@ -115,19 +115,36 @@ if [ "${COMMAND_LINE_INSTALL:-}" != '1' ]; then
   fi
 fi
 
-# Mozlumi: start the daily update check for the current user if it is not
-# loaded yet. Never unload or reload it here: the updater itself may be the
-# process that started this installation. A changed plist takes effect at the
-# next login.
-_mozkey_updater_label='blog.curren-lumi.inputmethod.Mozlumi.Updater'
-_mozkey_updater_plist="/Library/LaunchAgents/$_mozkey_updater_label.plist"
-_mozkey_updater_user=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null) || _mozkey_updater_user=''
-if [ -f "$_mozkey_updater_plist" ] && [ -n "$_mozkey_updater_user" ] && \
-   [ "$_mozkey_updater_user" != 'root' ] && [ "$_mozkey_updater_user" != 'loginwindow' ]; then
-  _mozkey_updater_uid=$(/usr/bin/id -u "$_mozkey_updater_user" 2>/dev/null) || _mozkey_updater_uid=''
-  if [ -n "$_mozkey_updater_uid" ] && \
-     ! /bin/launchctl print "gui/$_mozkey_updater_uid/$_mozkey_updater_label" >/dev/null 2>&1; then
-    /bin/launchctl bootstrap "gui/$_mozkey_updater_uid" "$_mozkey_updater_plist" >/dev/null 2>&1 || true
-  fi
+# Mozlumi: reload the launch agents of the current user. The installer has
+# just replaced their plists, and launchd refuses to start a loaded agent
+# whose plist was replaced ("Unable to get updated LWCR") until it is loaded
+# again. Without this, the converter does not start until the next login.
+# The converter and renderer were stopped above, so reloading them is safe.
+# The updater is reloaded only when it is not running: it may be the process
+# that started this installation (then it is reloaded at the next login).
+_mozkey_agent_user=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null) || _mozkey_agent_user=''
+if [ -n "$_mozkey_agent_user" ] && [ "$_mozkey_agent_user" != 'root' ] && \
+   [ "$_mozkey_agent_user" != 'loginwindow' ]; then
+  _mozkey_agent_uid=$(/usr/bin/id -u "$_mozkey_agent_user" 2>/dev/null) || _mozkey_agent_uid=''
+fi
+if [ -n "${_mozkey_agent_uid:-}" ]; then
+  for _mozkey_agent_name in Converter Renderer Updater; do
+    _mozkey_agent_label="blog.curren-lumi.inputmethod.Mozlumi.$_mozkey_agent_name"
+    _mozkey_agent_plist="/Library/LaunchAgents/$_mozkey_agent_label.plist"
+    _mozkey_agent_target="gui/$_mozkey_agent_uid/$_mozkey_agent_label"
+    [ -f "$_mozkey_agent_plist" ] || continue
+    if _mozkey_agent_state=$(/bin/launchctl print "$_mozkey_agent_target" 2>/dev/null); then
+      if [ "$_mozkey_agent_name" = 'Updater' ] && \
+         printf '%s\n' "$_mozkey_agent_state" | /usr/bin/grep -q 'state = running'; then
+        continue
+      fi
+      /bin/launchctl bootout "$_mozkey_agent_target" >/dev/null 2>&1 || true
+    fi
+    # bootout can finish asynchronously; retry once.
+    /bin/launchctl bootstrap "gui/$_mozkey_agent_uid" "$_mozkey_agent_plist" >/dev/null 2>&1 || {
+      /bin/sleep 1
+      /bin/launchctl bootstrap "gui/$_mozkey_agent_uid" "$_mozkey_agent_plist" >/dev/null 2>&1 || true
+    }
+  done
 fi
 exit 0
