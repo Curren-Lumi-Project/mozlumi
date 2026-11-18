@@ -760,6 +760,9 @@ message Config {
   // composition/conversion (Option+Tab by default) without live conversion.
   // Also enables surrounding-text acquisition for Zenz.
   optional bool use_ai_conversion = 5001 [default = true];
+  // Mozlumi: when the AI conversion differs from the normal conversion, make
+  // it the top candidate instead of the second one.
+  optional bool ai_candidate_first = 5002 [default = false];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;
@@ -810,6 +813,8 @@ message Config {
     optional uint32 corner_radius = 13 [default = 7];
     optional uint32 border_width = 14 [default = 0];
     optional uint32 opacity_percent = 15 [default = 93];
+    // Mozlumi: "AI candidate available" (Curren Lumi orange).
+    optional uint32 ai_candidate_color = 5000 [default = 0xf39800];
     optional uint32 shadow_size = 16 [default = 3];
     optional uint32 shadow_opacity_percent = 17 [default = 12];
     optional uint32 shadow_angle_degrees = 18 [default = 45];

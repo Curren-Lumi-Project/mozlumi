@@ -533,6 +533,9 @@ class Session {
     uint32_t poll_count = 0;
   };
   PendingAiCandidates pending_ai_candidates_;
+  // Mozlumi: shown on the conversion status badge for the current conversion.
+  enum class AiCandidateBadge { kNone, kAvailable, kApplied };
+  AiCandidateBadge ai_candidate_badge_ = AiCandidateBadge::kNone;
 
   struct PendingZenzFeedback {
     enum class Action {

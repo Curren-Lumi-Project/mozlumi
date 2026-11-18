@@ -2301,6 +2301,7 @@ bool Session::SendCommand(commands::Command* command) {
   }
   if (context_->state() != ImeContext::CONVERSION) {
     ClearAiCandidates();
+    ai_candidate_badge_ = AiCandidateBadge::kNone;
     live_conversion_active_ = false;
     live_conversion_from_composition_ = false;
     manual_zenz_commit_on_next_input_ = false;
@@ -2470,6 +2471,7 @@ bool Session::SendKey(commands::Command* command) {
 
   if (context_->state() != ImeContext::CONVERSION) {
     ClearAiCandidates();
+    ai_candidate_badge_ = AiCandidateBadge::kNone;
     live_conversion_active_ = false;
     live_conversion_from_composition_ = false;
     manual_zenz_commit_on_next_input_ = false;
@@ -7167,6 +7169,7 @@ bool Session::ForceZenzLiveCorrection(
   }
   // The explicit replacement supersedes a pending AI-candidates request.
   ClearAiCandidates();
+  ai_candidate_badge_ = AiCandidateBadge::kNone;
   // Explicit user action. Build a regular Mozc conversion as the baseline,
   // then run the existing asynchronous Zenz validation/adoption pipeline.
   // A manual request must never convert or export a password preedit.
@@ -7671,6 +7674,7 @@ void Session::AttachAiCandidatesPollCallback(
 
 void Session::MaybeScheduleAiCandidates(commands::Command* command) {
   ClearAiCandidates();
+  ai_candidate_badge_ = AiCandidateBadge::kNone;
   const config::Config& config = context_->GetConfig();
   if (!config.use_ai_conversion() ||
       context_->state() != ImeContext::CONVERSION ||
@@ -7853,6 +7857,7 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
   std::vector<engine::ExternalSegmentCandidate> candidates;
   size_t segment_index = 0;
   size_t aggregates = 0;
+  size_t changed_segments = 0;
   for (const ZenzProjectedSegment& segment : projection.segments) {
     if (!segment.boundary_known) {
       segment_index += std::max<size_t>(1, segment.baseline_keys.size());
@@ -7863,18 +7868,27 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
     // existing top candidate.
     if (!segment.zenz_value.empty()) {
       candidates.push_back({segment_index, segment.key, segment.zenz_value});
+      if (segment.changed) {
+        ++changed_segments;
+      }
     }
     ++segment_index;
   }
 
+  const bool ai_first = config.ai_candidate_first();
   const size_t inserted =
       candidates.empty()
           ? 0
           : context_->mutable_converter()->InsertExternalSegmentCandidates(
-                candidates, "AI", /*position=*/1);
+                candidates, "AI", /*position=*/ai_first ? 0 : 1);
+  if (inserted > 0 && changed_segments > 0 && !agrees_with_mozc) {
+    ai_candidate_badge_ =
+        ai_first ? AiCandidateBadge::kApplied : AiCandidateBadge::kAvailable;
+  }
   ZenzDebugOutput(absl::StrCat(
       "[ai-candidates] result agrees=", ZenzBool(agrees_with_mozc),
-      " segments=", candidates.size(), " applied=", inserted,
+      " segments=", candidates.size(), " changed=", changed_segments,
+      " applied=", inserted, " first=", ZenzBool(ai_first),
       " skipped_aggregates=", aggregates, " ",
       ZenzRedactedTextStats("value", prefix.value)));
   Output(command);
@@ -11121,6 +11135,15 @@ void Session::Output(commands::Command* command) {
   command->mutable_output()->set_pre_live_conversion_reading(
       command->output().has_preedit() &&
       ShouldExposePreLiveConversionReading(*context_));
+
+  if (context_->state() == ImeContext::CONVERSION &&
+      command->output().has_preedit()) {
+    if (ai_candidate_badge_ == AiCandidateBadge::kAvailable) {
+      command->mutable_output()->set_ai_candidate_available(true);
+    } else if (ai_candidate_badge_ == AiCandidateBadge::kApplied) {
+      command->mutable_output()->set_ai_candidate_applied(true);
+    }
+  }
 
   ObservePendingZenzFeedbackCommittedResult(*command, "output_result");
 }

@@ -12,7 +12,15 @@
 namespace mozc::renderer {
 
 // This is the DISPLAY status, not a per-character provenance claim.
-enum class ConversionDisplayStatus { kHidden, kReading, kMozc, kZenzPending, kZenz };
+enum class ConversionDisplayStatus {
+  kHidden,
+  kReading,
+  kMozc,
+  kZenzPending,
+  kZenz,
+  // Mozlumi: the AI conversion differs and is available as a candidate.
+  kAiCandidate,
+};
 
 inline ConversionDisplayStatus ResolveConversionDisplayStatus(
     const commands::Output& output) {
@@ -22,8 +30,11 @@ inline ConversionDisplayStatus ResolveConversionDisplayStatus(
   if (output.zenz_live_correction_pending()) {
     return ConversionDisplayStatus::kZenzPending;
   }
-  if (output.zenz_live_correction_applied()) {
+  if (output.zenz_live_correction_applied() || output.ai_candidate_applied()) {
     return ConversionDisplayStatus::kZenz;
+  }
+  if (output.ai_candidate_available()) {
+    return ConversionDisplayStatus::kAiCandidate;
   }
   if (output.live_conversion()) {
     return ConversionDisplayStatus::kMozc;
@@ -58,6 +69,8 @@ inline uint32_t ConversionStatusColor(
     case ConversionDisplayStatus::kMozc: return style.mozc_color();
     case ConversionDisplayStatus::kZenzPending: return style.zenz_pending_color();
     case ConversionDisplayStatus::kZenz: return style.zenz_color();
+    case ConversionDisplayStatus::kAiCandidate:
+      return style.ai_candidate_color();
     case ConversionDisplayStatus::kReading: return style.reading_color();
     case ConversionDisplayStatus::kHidden: return style.reading_color();
   }

@@ -115,6 +115,7 @@ std::wstring StatusText(ConversionDisplayStatus state,
       case ConversionDisplayStatus::kMozc: return L"M";
       case ConversionDisplayStatus::kZenzPending: return L"…";
       case ConversionDisplayStatus::kZenz: return L"AI";
+      case ConversionDisplayStatus::kAiCandidate: return L"AI!";
       case ConversionDisplayStatus::kReading: return L"あ";
       default: return L"";
     }
@@ -123,6 +124,7 @@ std::wstring StatusText(ConversionDisplayStatus state,
     case ConversionDisplayStatus::kMozc: return L"Mozlumi";
     case ConversionDisplayStatus::kZenzPending: return L"AI…";
     case ConversionDisplayStatus::kZenz: return L"AI";
+    case ConversionDisplayStatus::kAiCandidate: return L"AI候補あり";
     case ConversionDisplayStatus::kReading: return L"入力中";
     default: return L"";
   }

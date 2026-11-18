@@ -48,6 +48,9 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 
 Space で変換すると、ローカルの AI（Zenz）が裏で同じ文を変換し、通常の変換と違う部分があれば「AI」の印付きで 2 番目の候補に加えます。通常の変換結果は変わらないので、AI が外れても入力の邪魔になりません。
 
+- AI の変換が通常の変換と違うときは、変換中のバッジがオレンジの「AI候補あり」になります。確定する前に候補を見てみてください
+- 設定の「AI の変換が違うときは、AI の候補を 1 番目にする」をオンにすると、AI の答えが最初から選ばれた状態になります（バッジは「AI」）。AI が外れたときもそのまま確定されるので、初期設定はオフです
+
 打っている途中や変換中に **Option+Tab** を押すと、AI が前後の文脈をふまえて文全体を変換し直します。
 
 - もう一度 Option+Tab を押すか Space を押すと、元の変換に戻ります
@@ -151,6 +154,9 @@ In an evaluation with synthetic typos of dictionary words (held-out data, bundle
 #### AI conversion (Zenz)
 
 When you convert with Space, the local AI (Zenz) converts the same text in the background and, where its result differs, adds it as the second candidate marked "AI". The normal conversion is not changed, so a wrong AI result does not get in your way.
+
+- When the AI conversion differs, the conversion status badge turns orange and shows 「AI候補あり」 (AI candidate available), so you can check before committing
+- With the setting 「AI の変換が違うときは、AI の候補を 1 番目にする」 turned on, the AI result is selected from the start (the badge shows "AI"). A wrong AI result is then committed as well, so it is off by default
 
 While typing or converting, press **Option+Tab** to have the AI reconvert the whole sentence using the surrounding context.
 

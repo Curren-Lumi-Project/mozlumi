@@ -117,6 +117,20 @@ TEST(ConversionStatusIndicatorTest, PendingHasPriorityOverApplied) {
   out.set_zenz_live_correction_pending(false);
   EXPECT_EQ(ResolveConversionDisplayStatus(out), ConversionDisplayStatus::kZenz);
 }
+TEST(ConversionStatusIndicatorTest, AiCandidateStatus) {
+  auto out = PreeditOutput();
+  EXPECT_EQ(ResolveConversionDisplayStatus(out), ConversionDisplayStatus::kReading);
+  out.set_ai_candidate_available(true);
+  EXPECT_EQ(ResolveConversionDisplayStatus(out),
+            ConversionDisplayStatus::kAiCandidate);
+  out.set_ai_candidate_applied(true);
+  EXPECT_EQ(ResolveConversionDisplayStatus(out), ConversionDisplayStatus::kZenz);
+
+  config::Config config;
+  EXPECT_EQ(ConversionStatusColor(ConversionDisplayStatus::kAiCandidate,
+                                  config.conversion_status_indicator_style()),
+            0xf39800u);
+}
 TEST(ConversionStatusIndicatorTest, AutoAboveCompositionWithoutRuby) {
   config::Config::ConversionStatusIndicatorStyle style;
   Rect result;

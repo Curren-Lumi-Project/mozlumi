@@ -1304,7 +1304,7 @@ void EngineConverter::MaybeLearnTypingCorrection(
 size_t EngineConverter::InsertExternalSegmentCandidates(
     absl::Span<const ExternalSegmentCandidate> candidates,
     absl::string_view description, int position) {
-  if (!CheckState(CONVERSION) || position < 1) {
+  if (!CheckState(CONVERSION) || position < 0) {
     return 0;
   }
   size_t changed = 0;
@@ -1385,12 +1385,17 @@ size_t EngineConverter::InsertExternalSegmentCandidates(
       return index;
     };
 
+    // With position 0 the external candidate becomes the visible one, unless
+    // the user has already moved to another candidate.
+    const auto remap_selection = [&](int index) {
+      return (position == 0 && index == 0) ? 0 : remap(index);
+    };
     if (item.segment_index < selected_candidate_indices_.size()) {
       selected_candidate_indices_[item.segment_index] =
-          remap(selected_candidate_indices_[item.segment_index]);
+          remap_selection(selected_candidate_indices_[item.segment_index]);
     }
     if (item.segment_index == segment_index_) {
-      const int focused_id = remap(candidate_list_.focused_id());
+      const int focused_id = remap_selection(candidate_list_.focused_id());
       UpdateCandidateList();
       candidate_list_.MoveToId(focused_id);
     }

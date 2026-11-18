@@ -41,6 +41,7 @@
 #include <QFileDialog>
 #include <QFontDatabase>
 #include <QFont>
+#include <QBoxLayout>
 #include <QCheckBox>
 #include <QFrame>
 #include <QFormLayout>
@@ -317,6 +318,23 @@ void SetUpdateCheckEnabled(bool enabled) {
   }
 }
 #endif  // __APPLE__
+
+// Mozlumi: inserts `box` right after `anchor` in the layout that holds it.
+void InsertCheckBoxAfter(QWidget *anchor, QCheckBox *box) {
+  QWidget *parent = anchor->parentWidget();
+  for (QLayout *layout : parent->findChildren<QLayout *>()) {
+    if (QBoxLayout *box_layout = qobject_cast<QBoxLayout *>(layout)) {
+      const int index = box_layout->indexOf(anchor);
+      if (index >= 0) {
+        box_layout->insertWidget(index + 1, box);
+        return;
+      }
+    }
+  }
+  if (QLayout *layout = parent->layout()) {
+    layout->addWidget(box);
+  }
+}
 #ifdef _WIN32
 void NotifyDisplayAttributeUpdate();
 #endif  // _WIN32
@@ -714,15 +732,20 @@ ConfigDialog::ConfigDialog()
 
   InitializeCandidateRubyFontComboBox(candidateRubyFontComboBox);
 
+  // Mozlumi: AI candidate placement, next to the AI conversion switch.
+  ai_candidate_first_checkbox_ = new QCheckBox(
+      QString::fromUtf8("AI の変換が違うときは、AI の候補を 1 番目にする"
+                        "（オフ: 2 番目に入れて「AI候補あり」と表示）"),
+      aiConversionCheckBox->parentWidget());
+  InsertCheckBoxAfter(aiConversionCheckBox, ai_candidate_first_checkbox_);
+
 #ifdef __APPLE__
   // Mozlumi: daily update check, next to the other privacy options.
   update_check_checkbox_ = new QCheckBox(
       QString::fromUtf8(
           "Mozlumi のアップデートを1日1回確認する（GitHub に問い合わせます）"),
       presentationModeCheckBox->parentWidget());
-  if (QLayout *layout = presentationModeCheckBox->parentWidget()->layout()) {
-    layout->addWidget(update_check_checkbox_);
-  }
+  InsertCheckBoxAfter(presentationModeCheckBox, update_check_checkbox_);
 #endif  // __APPLE__
 
   // Event handlers to update 'Apply' button state.
@@ -6237,6 +6260,9 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
   // Mozlumi: AI conversion.
   SET_CHECKBOX(aiConversionCheckBox, use_ai_conversion);
+  if (ai_candidate_first_checkbox_ != nullptr) {
+    ai_candidate_first_checkbox_->setChecked(config.ai_candidate_first());
+  }
   SET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);
   // Invert only the UI: the persisted field remains an opt-in for emoji changes.
@@ -6632,6 +6658,9 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   GET_CHECKBOX(zenzLiveCorrectionCheckBox, use_zenz_live_correction);
   // Mozlumi: AI conversion.
   GET_CHECKBOX(aiConversionCheckBox, use_ai_conversion);
+  if (ai_candidate_first_checkbox_ != nullptr) {
+    config->set_ai_candidate_first(ai_candidate_first_checkbox_->isChecked());
+  }
   GET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);
   config->set_allow_zenz_emoji_changes(

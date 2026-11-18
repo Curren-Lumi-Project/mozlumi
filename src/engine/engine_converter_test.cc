@@ -1180,6 +1180,40 @@ TEST_F(EngineConverterTest, InsertExternalSegmentCandidatesLabelsAgreement) {
   EXPECT_EQ(output.candidate_window().candidate(1).value(), "カマボコの");
 }
 
+TEST_F(EngineConverterTest, InsertExternalSegmentCandidatesAtTop) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  {
+    Segments segments;
+    SetKamaboko(&segments);
+    composer_->InsertCharacterPreedit("かまぼこのいんぼう");
+    FillT13Ns(&segments, composer_.get());
+    EXPECT_CALL(*mock_converter, StartConversion(_, _))
+        .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+  }
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  const std::vector<ExternalSegmentCandidate> candidates = {
+      {0, "かまぼこの", "蒲鉾の"},  // New candidate.
+      {1, "いんぼう", "印房"},      // Moved from the second position.
+  };
+  EXPECT_EQ(converter.InsertExternalSegmentCandidates(candidates, "AI", 0),
+            2u);
+
+  // The AI candidates are now visible in both segments.
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  ASSERT_EQ(output.preedit().segment_size(), 2);
+  EXPECT_EQ(output.preedit().segment(0).value(), "蒲鉾の");
+  EXPECT_EQ(output.preedit().segment(1).value(), "印房");
+
+  // The original top candidate is next.
+  converter.CandidateNext(*composer_);
+  output.Clear();
+  converter.FillOutput(*composer_, &output);
+  EXPECT_EQ(output.preedit().segment(0).value(), "かまぼこの");
+}
+
 TEST_F(EngineConverterTest, InsertExternalSegmentCandidatesKeepsFocus) {
   auto mock_converter = std::make_shared<MockConverter>();
   EngineConverter converter(mock_converter, request_, config_);
