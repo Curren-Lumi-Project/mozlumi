@@ -69,9 +69,12 @@ QString ReplaceString(const QString &str) {
           "https://support.google.com/gboard/community?hl=ja");
   Replace(replaced, "[ForumName]", QObject::tr("product forum"));
 #else  // GOOGLE_JAPANESE_INPUT_BUILD
-  Replace(replaced, "[ProductUrl]", "https://github.com/Curren-Lumi-Project/mozlumi");
-  Replace(replaced, "[ForumUrl]", "https://github.com/Curren-Lumi-Project/mozlumi/issues");
-  Replace(replaced, "[ForumName]", QObject::tr("issues"));
+  // Mozlumi: the product page on カレンラボ, and the repository (issues are
+  // not used).
+  Replace(replaced, "[ProductUrl]",
+          "https://note.curren-lumi.blog/mozlumi-download/");
+  Replace(replaced, "[ForumUrl]", "https://github.com/Curren-Lumi-Project/mozlumi");
+  Replace(replaced, "[ForumName]", "GitHub");
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
   const std::string credit_filepath =

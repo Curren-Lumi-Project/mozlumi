@@ -12,6 +12,8 @@
 
 Mozlumi（もずるみ）は、[Mozkey](https://github.com/koyasi777/mozkey)（[google/mozc](https://github.com/google/mozc) をベースにした非公式フォーク）をさらにフォークした、非公式の日本語入力システムです。Curren-Lumi-Project（かれるみ）が管理しています。Mozkey および Google とは関係ありません。
 
+ダウンロードと使い方は、カレンラボの [Mozlumi（もずるみ）ダウンロード＆使い方](https://note.curren-lumi.blog/mozlumi-download/) にまとめています。
+
 Mozkey の機能を引き継いでいますが、次の点が異なります。Mozkey 本体の説明は [docs/README_mozkey.md](docs/README_mozkey.md) を参照してください。
 
 - ライブ変換と Zenz（AI）ライブ補正は使いません（常にオフで、設定画面からも外しています）
@@ -120,6 +122,8 @@ Mozlumi は Mozc・Mozkey と同じく 3-Clause BSD License です（サード�
 ## English
 
 Mozlumi is an unofficial Japanese input method forked from [Mozkey](https://github.com/koyasi777/mozkey), which is itself an unofficial fork of [google/mozc](https://github.com/google/mozc). It is maintained by Curren-Lumi-Project (Curren Lumi). Mozlumi is not affiliated with Mozkey or Google.
+
+Download and usage guide (in Japanese): [Mozlumi on カレンラボ](https://note.curren-lumi.blog/mozlumi-download/)
 
 Mozkey features are kept, with these differences. For Mozkey itself, see [docs/README_mozkey.md](docs/README_mozkey.md).
 
