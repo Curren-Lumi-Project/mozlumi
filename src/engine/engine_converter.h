@@ -183,8 +183,8 @@ class EngineConverter : public EngineConverterInterface {
   // plausible fix ("よくやる") first. Returns true if a fix was added.
   bool AddDanglingRomajiFix(const composer::Composer& composer,
                             const commands::Context& context);
-  // Mozlumi: offers fixes of a typo inside the phrase ("かけそば" typed
-  // "kakesiba") as the 2nd and 3rd candidates when their whole conversion
+  // Mozlumi: offers fixes of up to two typos inside the phrase ("かけそば"
+  // typed "kakesiba") from the 2nd candidate on when their whole conversion
   // is much more natural. Returns true if a fix was added.
   bool AddSentenceTypoFixes(const composer::Composer& composer,
                             const commands::Context& context);

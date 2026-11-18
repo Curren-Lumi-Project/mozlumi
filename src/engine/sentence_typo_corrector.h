@@ -103,6 +103,8 @@ struct SentenceTypoDecision {
   // The typed text is not corrected unless one of its segments is at least
   // this bad.
   int64_t min_worst_badness = 0;
+  // Added to the score of a fix of two typos.
+  int64_t two_edit_penalty = 0;
 };
 
 // Sum of the costs of the top candidates of the conversion segments.

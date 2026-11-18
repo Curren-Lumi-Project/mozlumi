@@ -1448,16 +1448,19 @@ bool EngineConverter::AddDanglingRomajiFix(const composer::Composer& composer,
 
 bool EngineConverter::AddSentenceTypoFixes(const composer::Composer& composer,
                                            const commands::Context& context) {
-  // Tuned with eval/analyze_sent.py on phrases from the bundled Aozora text:
-  // the right fix is offered for about half of the broken conversions, and
-  // about 5% of correctly typed phrases get an extra candidate (the
-  // conversion itself never changes).
-  constexpr size_t kMaxOffers = 2;
+  // Tuned with eval/analyze_sent2.py on phrases from the bundled Aozora text:
+  // the right fix is offered for 56% of the conversions broken by one typo
+  // and 18% of those broken by two, and about 5% of correctly typed phrases
+  // get an extra candidate (the conversion itself never changes).
+  constexpr size_t kMaxOffers = 3;
   SentenceTypoOptions options;
   options.max_conversions = 48;
+  options.second_round_seeds = 2;
+  options.second_round_conversions = 16;
   SentenceTypoDecision decision;
-  decision.cost_per_typo = 2000.0f;
-  decision.margin = 4000;
+  decision.cost_per_typo = 3000.0f;
+  decision.margin = 3000;
+  decision.two_edit_penalty = 2000;
 
   Segment* top_segment = segments_.mutable_conversion_segment(0);
   if (top_segment->candidates_size() == 0) {

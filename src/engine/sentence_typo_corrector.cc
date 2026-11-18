@@ -325,8 +325,10 @@ std::optional<size_t> ChooseSentenceTypoFix(
     if (c.value == analysis.value) {
       continue;
     }
+    const bool two_edits = c.edit.find('|') != std::string::npos;
     const double score = static_cast<double>(c.sentence_cost) +
-                         decision.cost_per_typo * c.typo_cost;
+                         decision.cost_per_typo * c.typo_cost +
+                         (two_edits ? decision.two_edit_penalty : 0);
     if (!best.has_value() || score < best_score) {
       best = i;
       best_score = score;
@@ -352,8 +354,10 @@ std::vector<size_t> RankSentenceTypoOffers(
     if (c.value == analysis.value) {
       continue;
     }
+    const bool two_edits = c.edit.find('|') != std::string::npos;
     const double score = static_cast<double>(c.sentence_cost) +
-                         decision.cost_per_typo * c.typo_cost;
+                         decision.cost_per_typo * c.typo_cost +
+                         (two_edits ? decision.two_edit_penalty : 0);
     if (score + static_cast<double>(decision.margin) <
         static_cast<double>(analysis.sentence_cost)) {
       scored.emplace_back(score, i);

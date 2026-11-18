@@ -38,7 +38,7 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 - 打った読みがそのまま辞書にある場合や、よく使う語の書きかけと判断した場合は補正しません
 - 動作するのは、ローマ字入力・ひらがなモードです。打っている途中のサジェストと予測候補（Tab）に出ます
 - 打ち間違えたまま Space で変換したときも、2 番目以降の候補に「補正」の印付きで補正候補を並べます（1 番目の変換結果は変わりません）
-- 文の途中の打ち間違い（例: 「さかなをたべる」を `sakanaeotaberu` と打った）は、Space 変換のときに、打ち間違いを 1 か所直した読みを文全体として変換し直して比べます。打ったままより十分に自然な変換になるものを、2 番目以降の候補に「補正」の印付きで最大 2 件加え、変換中のバッジを紫の「補正あり」にします（1 番目の変換結果は変わりません）
+- 文の途中の打ち間違い（例: 「さかなをたべる」を `sakanaeotaberu` と打った）は、Space 変換のときに、打ち間違いを直した読み（2 か所まで）を文全体として変換し直して比べます。打ったままより十分に自然な変換になるものを、2 番目以降の候補に「補正」の印付きで最大 3 件加え、変換中のバッジを紫の「補正あり」にします（1 番目の変換結果は変わりません）
 - 入力の最後に、かなにならないローマ字が 2 文字以上残ったとき（例: `yokuyary` →「よくやry」）は、そこだけを直した変換を 1 番目にします（打ったままの文字は 2 番目）
 - 予測候補（Tab）と Space 変換では、8 文字以上の入力で 1 文字の補正が見つからないとき、2 か所までの打ち間違いも探します（打っている途中のサジェストでは探しません）
 - 補正候補を選んで確定すると、その打ち間違いの種類（例: a のつもりで q を押した）を覚え、次から同じ間違い方の補正を上位に出します。覚えるのは間違い方の種類と回数だけで、打った文章は保存しません
@@ -147,7 +147,7 @@ Mozlumi guesses one-keystroke typos in romaji input and adds corrected candidate
 - No correction when the typed reading is already a word, or when it looks like the beginning of a common word
 - Works in romaji input, hiragana mode, for suggestions while typing and predictions (Tab)
 - When you convert a mistyped reading with Space, corrected candidates marked 「補正」 are added from the second candidate on (the first conversion result is not changed)
-- A typo inside a phrase (e.g. `sakanaeotaberu` for 「さかなをたべる」) is checked on Space conversion by converting one-key fixes as whole sentences. Up to two fixes whose conversion is much more natural are added from the second candidate on, marked 「補正」, and the conversion status badge turns purple and shows 「補正あり」 (the first conversion result is not changed)
+- A typo inside a phrase (e.g. `sakanaeotaberu` for 「さかなをたべる」) is checked on Space conversion by converting fixes of up to two keys as whole sentences. Up to three fixes whose conversion is much more natural are added from the second candidate on, marked 「補正」, and the conversion status badge turns purple and shows 「補正あり」 (the first conversion result is not changed)
 - When two or more letters that cannot become kana are left at the end (e.g. `yokuyary` → 「よくやry」), the conversion with only those letters fixed comes first (the typed text second)
 - On predictions (Tab) and Space conversion, typos at two places are also searched for input of 8 or more letters when no one-place correction is found (not on suggestions while typing)
 - When you commit a corrected candidate, the kind of typo (e.g. pressing q for a) is learned, and corrections of the same kind rank higher next time. Only the kinds of typos and their counts are stored, not the text you typed
