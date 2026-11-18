@@ -73,6 +73,11 @@ struct SentenceTypoOptions {
   size_t second_round_seeds = 2;
   size_t second_round_conversions = 16;
   float seed_cost_per_typo = 2000.0f;
+  // Only the top candidate of each segment is used, so the fixes are
+  // converted with fewer candidates per segment (0: the usual 200) and
+  // without the slow rewriters (user boundary history, transliteration).
+  int conversion_candidates = 20;
+  bool skip_slow_rewriters = true;
 };
 
 struct SentenceTypoCandidate {

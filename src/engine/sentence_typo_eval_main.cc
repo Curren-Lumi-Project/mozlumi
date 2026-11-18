@@ -63,6 +63,10 @@ ABSL_FLAG(int32_t, max_conversions, 64, "fixes converted per input");
 ABSL_FLAG(int32_t, second_round_seeds, 0, "fixes corrected once more");
 ABSL_FLAG(int32_t, second_round_conversions, 16,
           "fixes converted per seed in the second round");
+ABSL_FLAG(int32_t, conversion_candidates, 20,
+          "candidates per segment when converting fixes (0: the usual 200)");
+ABSL_FLAG(bool, skip_slow_rewriters, true,
+          "skip the slow rewriters when converting fixes");
 
 namespace {
 
@@ -98,6 +102,8 @@ int main(int argc, char** argv) {
   options.second_round_seeds = absl::GetFlag(FLAGS_second_round_seeds);
   options.second_round_conversions =
       absl::GetFlag(FLAGS_second_round_conversions);
+  options.conversion_candidates = absl::GetFlag(FLAGS_conversion_candidates);
+  options.skip_slow_rewriters = absl::GetFlag(FLAGS_skip_slow_rewriters);
 
   auto convert = [&](const mozc::composer::Composer& composer,
                      mozc::Segments* segments) {

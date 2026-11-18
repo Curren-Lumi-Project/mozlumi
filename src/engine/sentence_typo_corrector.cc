@@ -37,6 +37,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
 #include "base/strings/japanese.h"
 #include "base/util.h"
@@ -104,10 +105,15 @@ bool Convert(const ConverterInterface& converter,
              const composer::Composer& composer,
              const commands::Request& request, const config::Config& config,
              const commands::Context& context, bool use_history,
-             Segments* segments) {
+             const SentenceTypoOptions& options, Segments* segments) {
   ConversionRequest::Options request_options;
   request_options.request_type = ConversionRequest::CONVERSION;
   request_options.enable_user_history_for_conversion = use_history;
+  if (options.conversion_candidates > 0) {
+    request_options.max_conversion_candidates_size =
+        options.conversion_candidates;
+  }
+  request_options.skip_slow_rewriters = options.skip_slow_rewriters;
   const ConversionRequest conversion_request =
       ConversionRequestBuilder()
           .SetComposer(composer)
@@ -120,13 +126,16 @@ bool Convert(const ConverterInterface& converter,
          segments->conversion_segments_size() > 0;
 }
 
-// One round: converts one-key fixes of the typed romaji.
+// One round: converts one-key fixes of the typed romaji. When `converted` is
+// given, it receives the conversion of each candidate (same order), so that
+// the second round does not convert the seeds again.
 SentenceTypoAnalysis AnalyzeOneEdit(
     const ConverterInterface& converter, const composer::Composer& composer,
     const Segments& original, const commands::Request& request,
     const config::Config& config, const commands::Context& context,
     bool use_history, const SentenceTypoOptions& options,
-    const prediction::TypoHabitStore* habits) {
+    const prediction::TypoHabitStore* habits,
+    std::vector<Segments>* converted = nullptr) {
   SentenceTypoAnalysis analysis;
   analysis.value = SentenceValue(original);
   analysis.sentence_cost = SentenceCost(original);
@@ -186,7 +195,7 @@ SentenceTypoAnalysis AnalyzeOneEdit(
     std::string key;
   };
   std::vector<Pending> pending;
-  std::vector<std::u32string> seen = {original_key};
+  absl::flat_hash_set<std::u32string> seen = {original_key};
   for (const prediction::RomanTypoCandidate& typo : generated) {
     composer::Composer fixed = composer;
     fixed.EditErase();
@@ -196,12 +205,10 @@ SentenceTypoAnalysis AnalyzeOneEdit(
       continue;
     }
     std::string key = fixed.GetQueryForConversion();
-    const std::u32string key32 = Util::Utf8ToUtf32(key);
-    if (key32.empty() ||
-        std::find(seen.begin(), seen.end(), key32) != seen.end()) {
+    std::u32string key32 = Util::Utf8ToUtf32(key);
+    if (key32.empty() || !seen.insert(key32).second) {
       continue;
     }
-    seen.push_back(key32);
     size_t prefix = 0;
     while (prefix < key32.size() && prefix < original_key.size() &&
            key32[prefix] == original_key[prefix]) {
@@ -221,7 +228,7 @@ SentenceTypoAnalysis AnalyzeOneEdit(
   for (const Pending& p : pending) {
     Segments segments;
     if (!Convert(converter, p.composer, request, config, context, use_history,
-                 &segments)) {
+                 options, &segments)) {
       continue;
     }
     SentenceTypoCandidate candidate;
@@ -234,6 +241,9 @@ SentenceTypoAnalysis AnalyzeOneEdit(
     candidate.segment_rank = p.rank;
     if (!candidate.value.empty()) {
       analysis.candidates.push_back(std::move(candidate));
+      if (converted != nullptr) {
+        converted->push_back(std::move(segments));
+      }
     }
   }
   return analysis;
@@ -247,10 +257,13 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
     const config::Config& config, const commands::Context& context,
     bool use_history, const SentenceTypoOptions& options,
     const prediction::TypoHabitStore* habits) {
+  const bool second_round = options.second_round_seeds > 0;
+  std::vector<Segments> converted;
   SentenceTypoAnalysis analysis =
       AnalyzeOneEdit(converter, composer, original, request, config, context,
-                     use_history, options, habits);
-  if (options.second_round_seeds == 0 || analysis.candidates.empty()) {
+                     use_history, options, habits,
+                     second_round ? &converted : nullptr);
+  if (!second_round || analysis.candidates.empty()) {
     return analysis;
   }
 
@@ -285,13 +298,9 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
     seed_composer.EditErase();
     seed_composer.SetInputMode(composer.GetInputMode());
     seed_composer.InsertCharacter(seed.romaji);
-    Segments seed_segments;
-    if (!Convert(converter, seed_composer, request, config, context,
-                 use_history, &seed_segments)) {
-      continue;
-    }
+    // The seed was converted in the first round.
     const SentenceTypoAnalysis next =
-        AnalyzeOneEdit(converter, seed_composer, seed_segments, request,
+        AnalyzeOneEdit(converter, seed_composer, converted[index], request,
                        config, context, use_history, second, habits);
     for (const SentenceTypoCandidate& c : next.candidates) {
       if (c.value == analysis.value ||
