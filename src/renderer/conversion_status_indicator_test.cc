@@ -92,6 +92,19 @@ TEST(ConversionStatusIndicatorTest, NormalSuggestionsAndConversionHideStatus) {
   candidates->clear_candidate();
   EXPECT_TRUE(ShouldHideConversionStatusForCandidate(out, true));
 }
+TEST(ConversionStatusIndicatorTest, AiBadgesStayWithCandidateList) {
+  auto out = PreeditOutput();
+  auto* candidates = out.mutable_candidate_window();
+  candidates->set_category(commands::CONVERSION);
+  candidates->add_candidate()->set_value("candidate");
+  candidates->set_focused_index(0);
+  EXPECT_TRUE(ShouldHideConversionStatusForCandidate(out, true));
+  out.set_ai_candidate_available(true);
+  EXPECT_FALSE(ShouldHideConversionStatusForCandidate(out, true));
+  out.set_ai_candidate_available(false);
+  out.set_ai_candidate_applied(true);
+  EXPECT_FALSE(ShouldHideConversionStatusForCandidate(out, true));
+}
 TEST(ConversionStatusIndicatorTest, HiddenWithoutPreedit) {
   commands::Output out;
   EXPECT_EQ(ResolveConversionDisplayStatus(out), ConversionDisplayStatus::kHidden);

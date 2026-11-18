@@ -50,6 +50,11 @@ inline ConversionDisplayStatus ResolveConversionDisplayStatus(
 inline bool ShouldHideConversionStatusForCandidate(
     const commands::Output& output, bool candidate_window_visible) {
   if (!candidate_window_visible) return false;
+  // Mozlumi: keep the AI badges while choosing a candidate, so that the user
+  // can see that the AI result is in the list (placed beside the list).
+  if (output.ai_candidate_available() || output.ai_candidate_applied()) {
+    return false;
+  }
   if (output.has_candidate_window()) {
     const auto& candidate = output.candidate_window();
     if (candidate.has_category() &&
