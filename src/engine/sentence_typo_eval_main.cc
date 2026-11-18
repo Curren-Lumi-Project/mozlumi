@@ -90,6 +90,8 @@ int main(int argc, char** argv) {
 
   mozc::engine::SentenceTypoOptions options;
   options.max_conversions = absl::GetFlag(FLAGS_max_conversions);
+  // Converts everything so that the threshold can be tuned offline.
+  options.min_worst_badness = 0;
 
   auto convert = [&](const mozc::composer::Composer& composer,
                      mozc::Segments* segments) {

@@ -128,6 +128,9 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
   std::stable_sort(badness.begin(), badness.end(),
                    [](const auto& a, const auto& b) { return a.first > b.first; });
   analysis.worst_badness = badness.front().first;
+  if (analysis.worst_badness < options.min_worst_badness) {
+    return analysis;
+  }
   std::vector<size_t> rank_of(badness.size());
   for (size_t r = 0; r < badness.size(); ++r) {
     rank_of[badness[r].second] = r;

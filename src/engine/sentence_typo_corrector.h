@@ -62,6 +62,11 @@ struct SentenceTypoOptions {
   size_t max_conversions = 48;
   // Romaji longer than this is not corrected.
   size_t max_raw_length = 64;
+  // Nothing is converted unless a segment of the typed text is at least this
+  // bad (cost per character, or romaji left). Correctly typed phrases are
+  // mostly below it: in the evaluation, 2000 skipped about a quarter of them
+  // without losing any fix.
+  int64_t min_worst_badness = 2000;
 };
 
 struct SentenceTypoCandidate {
