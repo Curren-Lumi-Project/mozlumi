@@ -1215,6 +1215,67 @@ TEST_F(EngineConverterTest, OffersSentenceTypoFixSecond) {
             "補正");
 }
 
+// Mozlumi: the fixes are kept for Zenz, and the session can replace them.
+TEST_F(EngineConverterTest, ReplacesSentenceTypoFixesChosenByZenz) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  composer_->InsertCharacter("sakanaeotaberu");
+  EXPECT_CALL(*mock_converter, StartConversion(_, _))
+      .WillRepeatedly(
+          Invoke([](const ConversionRequest& request, Segments* segments) {
+            const std::string key = request.composer().GetQueryForConversion();
+            segments->Clear();
+            Segment* segment = segments->add_segment();
+            segment->set_key(key);
+            converter::Candidate* candidate = segment->add_candidate();
+            candidate->key = key;
+            candidate->content_key = key;
+            candidate->value = key == "さかなをたべる" ? "魚を食べる" : key;
+            candidate->content_value = candidate->value;
+            candidate->cost = key == "さかなをたべる" ? 1000 : 20000;
+            return true;
+          }));
+  ASSERT_TRUE(converter.Convert(*composer_));
+  converter.AddTypingCorrectionCandidates(*composer_,
+                                          commands::Context::default_instance());
+
+  std::string typed_key;
+  const std::vector<SentenceTypoFixForZenz> fixes =
+      converter.GetSentenceTypoFixesForZenz(&typed_key);
+  EXPECT_EQ(typed_key, "さかなえおたべる");
+  ASSERT_FALSE(fixes.empty());
+  EXPECT_LE(fixes.size(), 4);
+  EXPECT_EQ(fixes[0].key, "さかなをたべる");
+  EXPECT_EQ(fixes[0].value, "魚を食べる");
+  EXPECT_TRUE(fixes[0].offered);
+
+  // Zenz prefers the same reading with another conversion.
+  const std::vector<SentenceTypoChoiceToApply> choices = {
+      {"さかなをたべる", "魚をたべる", fixes[0].edit, "AI補正"}};
+  EXPECT_EQ(converter.ReplaceSentenceTypoFixes(choices, "sakanaeotaberu"), 1);
+  {
+    commands::Output output;
+    converter.FillOutput(*composer_, &output);
+    // The conversion itself is unchanged.
+    EXPECT_EQ(output.preedit().segment(0).value(), "さかなえおたべる");
+    EXPECT_TRUE(output.typing_correction_available());
+  }
+  converter.CandidateNext(*composer_);
+  commands::Output output;
+  converter.FillOutput(*composer_, &output);
+  EXPECT_EQ(output.preedit().segment(0).value(), "魚をたべる");
+  ASSERT_TRUE(output.has_candidate_window());
+  EXPECT_EQ(output.candidate_window().candidate(1).annotation().description(),
+            "AI補正");
+  // Mozc's offer was replaced.
+  for (const auto& candidate : output.candidate_window().candidate()) {
+    EXPECT_NE(candidate.value(), "魚を食べる");
+  }
+
+  // Once the user has moved, nothing changes.
+  EXPECT_EQ(converter.ReplaceSentenceTypoFixes({}, "sakanaeotaberu"), 0);
+}
+
 TEST_F(EngineConverterTest, InsertExternalSegmentCandidates) {
   auto mock_converter = std::make_shared<MockConverter>();
   EngineConverter converter(mock_converter, request_, config_);

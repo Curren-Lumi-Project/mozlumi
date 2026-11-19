@@ -9,6 +9,7 @@
 #include <cstring>
 #include <functional>
 #include <string>
+#include <vector>
 #include <string_view>
 #include <thread>
 
@@ -314,6 +315,26 @@ TEST(LlamaHttpClientTest, RejectsHeaderInjectionInApiKey) {
 
   EXPECT_EQ(response.status, LlamaHttpCompletionStatus::kError);
   EXPECT_EQ(response.debug, "invalid_api_key");
+}
+
+// Mozlumi: the log-probability of each generated token (n_probs).
+TEST(LlamaHttpClientTest, ParsesTokenLogprobs) {
+  const std::string json =
+      R"({"index":0,"content":"キ\uee01今日","completion_probabilities":[)"
+      R"({"id":436,"token":"キ","bytes":[227,130,173],"logprob":-4.17,)"
+      R"("top_logprobs":[{"id":298,"token":"ア","bytes":[227,130,162],)"
+      R"("logprob":-3.30}]},)"
+      R"({"id":5,"token":"\"{x}","bytes":[34,123],"logprob":-0.5e0,)"
+      R"("top_logprobs":[]}],"stop":true})";
+  std::vector<LlamaHttpTokenLogprob> tokens;
+  ASSERT_TRUE(ParseLlamaHttpTokenLogprobs(json, &tokens));
+  ASSERT_EQ(tokens.size(), 2);
+  EXPECT_EQ(tokens[0].bytes, 3);
+  EXPECT_DOUBLE_EQ(tokens[0].logprob, -4.17);
+  EXPECT_EQ(tokens[1].bytes, 2);
+  EXPECT_DOUBLE_EQ(tokens[1].logprob, -0.5);
+
+  EXPECT_FALSE(ParseLlamaHttpTokenLogprobs(R"({"content":"x"})", &tokens));
 }
 
 }  // namespace

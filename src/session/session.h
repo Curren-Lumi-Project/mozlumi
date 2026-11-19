@@ -45,6 +45,7 @@
 #include "absl/time/time.h"
 #include "composer/composer.h"
 #include "composer/table.h"
+#include "engine/engine_converter_interface.h"
 #include "engine/engine_interface.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
@@ -533,6 +534,17 @@ class Session {
     uint32_t poll_count = 0;
   };
   PendingAiCandidates pending_ai_candidates_;
+
+  struct PendingTypoZenz {
+    bool pending = false;
+    uint32_t generation = 0;
+    std::string key;
+    std::string left_context;
+    std::vector<engine::SentenceTypoFixForZenz> fixes;
+    absl::Time issued_at;
+    uint32_t poll_count = 0;
+  };
+  PendingTypoZenz pending_typo_zenz_;
   // Mozlumi: shown on the conversion status badge for the current conversion.
   enum class AiCandidateBadge { kNone, kAvailable, kApplied };
   AiCandidateBadge ai_candidate_badge_ = AiCandidateBadge::kNone;
@@ -848,8 +860,17 @@ class Session {
   // Mozlumi: AI candidates.
   void MaybeScheduleAiCandidates(commands::Command* command);
   bool ApplyAiCandidates(commands::Command* command);
+  bool ApplyAiCandidatesInternal(commands::Command* command);
   void AttachAiCandidatesPollCallback(commands::Command* command) const;
   void ClearAiCandidates();
+
+  // Mozlumi: scores the sentence typo fixes with Zenz and the context, after
+  // the conversion (and its AI candidate) is shown, and replaces the fixes
+  // in the candidate list with the ones Zenz prefers.
+  void MaybeScheduleTypoZenz(commands::Command* command);
+  bool ApplyTypoZenz(commands::Command* command);
+  void AttachTypoZenzPollCallback(commands::Command* command) const;
+  void ClearTypoZenz();
   bool ApplyZenzLiveCorrectionResult(
       const ZenzLiveResponse& response,
       mozc::commands::Command* command);

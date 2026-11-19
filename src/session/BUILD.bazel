@@ -75,6 +75,23 @@ mozc_cc_test(
     ],
 )
 
+# Mozlumi: chooses the sentence typo fixes with Zenz's scores.
+mozc_cc_library(
+    name = "zenz_typo_decision",
+    srcs = ["zenz_typo_decision.cc"],
+    hdrs = ["zenz_typo_decision.h"],
+)
+
+mozc_cc_test(
+    name = "zenz_typo_decision_test",
+    size = "small",
+    srcs = ["zenz_typo_decision_test.cc"],
+    deps = [
+        ":zenz_typo_decision",
+        "//testing:gunit_main",
+    ],
+)
+
 mozc_cc_library(
     name = "zenz_output_validator",
     srcs = ["zenz_output_validator.cc"],
@@ -227,6 +244,7 @@ mozc_cc_library(
         ":zenz_prompt_builder",
         ":zenz_segment_projection",
         ":zenz_text_privacy_analyzer",
+        ":zenz_typo_decision",
         "//base:clock",
         "//base:util",
         "//composer",
@@ -238,6 +256,7 @@ mozc_cc_library(
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
         "//transliteration",
+        "//zenz:typo_batch",
         "//zenz:unix_socket_path",
         "//zenz:wire_protocol",
         "@com_google_absl//absl/log",

@@ -43,3 +43,24 @@ mozc_cc_test(
         "//testing:gunit_main",
     ],
 )
+
+# Mozlumi: scoring jobs for the typo correction, carried in one ZNZ1 request.
+mozc_cc_library(
+    name = "typo_batch",
+    srcs = ["zenz_typo_batch.cc"],
+    hdrs = ["zenz_typo_batch.h"],
+    visibility = [
+        "//session:__pkg__",
+        "//zenz_scorer:__pkg__",
+    ],
+)
+
+mozc_cc_test(
+    name = "zenz_typo_batch_test",
+    size = "small",
+    srcs = ["zenz_typo_batch_test.cc"],
+    deps = [
+        ":typo_batch",
+        "//testing:gunit_main",
+    ],
+)

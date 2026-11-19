@@ -87,6 +87,7 @@ mozc_cc_library(
     deps = [
         ":llama_http_client",
         ":posix_server",
+        "//zenz:typo_batch",
         "//zenz:wire_protocol",
     ],
 )
