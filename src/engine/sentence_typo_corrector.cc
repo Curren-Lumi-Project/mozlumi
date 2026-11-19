@@ -251,6 +251,34 @@ SentenceTypoAnalysis AnalyzeOneEdit(
 
 }  // namespace
 
+std::optional<SentenceTypoCandidate> ConvertSentenceTypoFix(
+    const ConverterInterface& converter, const composer::Composer& composer,
+    const std::string& romaji, const commands::Request& request,
+    const config::Config& config, const commands::Context& context,
+    bool use_history, const SentenceTypoOptions& options) {
+  composer::Composer fixed = composer;
+  fixed.EditErase();
+  fixed.SetInputMode(composer.GetInputMode());
+  fixed.InsertCharacter(romaji);
+  if (ContainsLatin(fixed.GetStringForPreedit())) {
+    return std::nullopt;
+  }
+  Segments segments;
+  if (!Convert(converter, fixed, request, config, context, use_history,
+               options, &segments)) {
+    return std::nullopt;
+  }
+  SentenceTypoCandidate candidate;
+  candidate.romaji = romaji;
+  candidate.key = fixed.GetQueryForConversion();
+  candidate.value = SentenceValue(segments);
+  candidate.sentence_cost = SentenceCost(segments);
+  if (candidate.key.empty() || candidate.value.empty()) {
+    return std::nullopt;
+  }
+  return candidate;
+}
+
 SentenceTypoAnalysis AnalyzeSentenceTypos(
     const ConverterInterface& converter, const composer::Composer& composer,
     const Segments& original, const commands::Request& request,

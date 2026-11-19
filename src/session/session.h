@@ -550,6 +550,9 @@ class Session {
   // Mozlumi: recently committed text, Zenz's left context for applications
   // that do not provide surrounding text. Memory only.
   ZenzRecentCommitContext recent_commit_context_;
+  // Mozlumi: romaji inputs converted before the next commit, to learn a typo
+  // that the user fixes by typing again (prediction::TypoSelfFixStore).
+  std::vector<std::pair<std::string, absl::Time>> self_fix_converted_raws_;
   // Mozlumi: shown on the conversion status badge for the current conversion.
   enum class AiCandidateBadge { kNone, kAvailable, kApplied };
   AiCandidateBadge ai_candidate_badge_ = AiCandidateBadge::kNone;
@@ -886,6 +889,11 @@ class Session {
   void UpdateRecentCommitContext(const commands::Command& command,
                                  ImeContext::State state_before,
                                  bool from_send_key);
+  // Mozlumi: remembers converted inputs, and when the committed input differs
+  // from one of them by a small edit, learns it as the user's typo fix.
+  void UpdateSelfFixLearning(const commands::Command& command,
+                             ImeContext::State state_before,
+                             const std::string& raw_before);
   bool ApplyZenzLiveCorrectionResult(
       const ZenzLiveResponse& response,
       mozc::commands::Command* command);

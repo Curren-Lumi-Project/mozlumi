@@ -445,6 +445,7 @@ mozc_cc_library(
         "//converter:attribute",
         "//prediction:roman_typo_candidates",
         "//prediction:typo_habit_store",
+        "//prediction:typo_self_fix_store",
         "//converter:converter_interface",
         "//converter:segments",
         "//protocol:candidate_window_cc_proto",

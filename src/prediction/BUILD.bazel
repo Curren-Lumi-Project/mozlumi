@@ -1027,6 +1027,34 @@ mozc_cc_test(
 )
 
 mozc_cc_library(
+    name = "typo_self_fix_store",
+    srcs = ["typo_self_fix_store.cc"],
+    hdrs = ["typo_self_fix_store.h"],
+    visibility = [
+        "//engine:__pkg__",
+        "//session:__pkg__",
+    ],
+    deps = [
+        "//base:file_util",
+        "//base:system_util",
+    ],
+)
+
+mozc_cc_test(
+    name = "typo_self_fix_store_test",
+    size = "small",
+    srcs = ["typo_self_fix_store_test.cc"],
+    deps = [
+        ":typo_self_fix_store",
+        "//base:file_util",
+        "//base/file:temp_dir",
+        "//testing:gunit",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+    ],
+)
+
+mozc_cc_library(
     name = "roman_typo_corrector",
     srcs = ["roman_typo_corrector.cc"],
     hdrs = ["roman_typo_corrector.h"],

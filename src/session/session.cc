@@ -55,6 +55,7 @@
 #include "composer/table.h"
 #include "engine/engine_converter_interface.h"
 #include "engine/engine_interface.h"
+#include "prediction/typo_self_fix_store.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "session/ime_context.h"
@@ -2125,6 +2126,8 @@ void Session::EnsureIMEIsOn() {
 }
 
 bool Session::SendCommand(commands::Command* command) {
+  const ImeContext::State self_fix_state_before = context_->state();
+  const std::string self_fix_raw_before = context_->composer().GetRawString();
   UpdateTime();
   UpdatePreferences(command);
   if (!command->input().has_command()) {
@@ -2312,6 +2315,7 @@ bool Session::SendCommand(commands::Command* command) {
 
   UpdateRecentCommitContext(*command, context_->state(),
                             /*from_send_key=*/false);
+  UpdateSelfFixLearning(*command, self_fix_state_before, self_fix_raw_before);
   MaybeSetUndoStatus(command);
   return result;
 }
@@ -2438,6 +2442,7 @@ bool Session::TestSendKey(commands::Command* command) {
 
 bool Session::SendKey(commands::Command* command) {
   const ImeContext::State recent_commit_state_before = context_->state();
+  const std::string self_fix_raw_before = context_->composer().GetRawString();
   // A new physical key always invalidates a suspended macro, including a
   // reconversion continuation that has not reached the TSF callback yet.
   ++command_sequence_generation_;
@@ -2485,6 +2490,8 @@ bool Session::SendKey(commands::Command* command) {
 
   UpdateRecentCommitContext(*command, recent_commit_state_before,
                             /*from_send_key=*/true);
+  UpdateSelfFixLearning(*command, recent_commit_state_before,
+                        self_fix_raw_before);
   MaybeSetUndoStatus(command);
   return result;
 }
@@ -7926,6 +7933,59 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
 }
 
 void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
+
+void Session::UpdateSelfFixLearning(const commands::Command& command,
+                                    ImeContext::State state_before,
+                                    const std::string& raw_before) {
+  if (!context_->GetConfig().use_typing_correction() ||
+      context_->composer().GetInputFieldType() ==
+          commands::Context::PASSWORD) {
+    self_fix_converted_raws_.clear();
+    return;
+  }
+  // A fix typed long after the conversion is not a fix of it.
+  constexpr absl::Duration kMaxFixDelay = absl::Minutes(2);
+  constexpr size_t kMaxConvertedRaws = 4;
+  const absl::Time now = Clock::GetAbslTime();
+  self_fix_converted_raws_.erase(
+      std::remove_if(self_fix_converted_raws_.begin(),
+                     self_fix_converted_raws_.end(),
+                     [&](const auto& entry) {
+                       return now - entry.second > kMaxFixDelay;
+                     }),
+      self_fix_converted_raws_.end());
+
+  const commands::Output& output = command.output();
+  if (output.has_result() && !output.result().value().empty()) {
+    if (state_before == ImeContext::CONVERSION ||
+        state_before == ImeContext::COMPOSITION) {
+      for (auto it = self_fix_converted_raws_.rbegin();
+           it != self_fix_converted_raws_.rend(); ++it) {
+        if (it->first != raw_before &&
+            prediction::TypoSelfFixStore::Get()->Learn(it->first,
+                                                       raw_before)) {
+          // The text itself is not logged.
+          ZenzDebugOutput("[typo-self-fix] learned");
+          break;
+        }
+      }
+    }
+    self_fix_converted_raws_.clear();
+    return;
+  }
+
+  if (state_before != ImeContext::CONVERSION &&
+      context_->state() == ImeContext::CONVERSION) {
+    const std::string raw = context_->composer().GetRawString();
+    if (!raw.empty() && (self_fix_converted_raws_.empty() ||
+                         self_fix_converted_raws_.back().first != raw)) {
+      self_fix_converted_raws_.emplace_back(raw, now);
+      if (self_fix_converted_raws_.size() > kMaxConvertedRaws) {
+        self_fix_converted_raws_.erase(self_fix_converted_raws_.begin());
+      }
+    }
+  }
+}
 
 ZenzClientContextView Session::GetZenzContextView(
     bool* from_recent_commit) const {
