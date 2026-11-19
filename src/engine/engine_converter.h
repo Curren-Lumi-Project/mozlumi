@@ -192,6 +192,11 @@ class EngineConverter : public EngineConverterInterface {
   size_t InsertExternalSegmentCandidates(
       absl::Span<const ExternalSegmentCandidate> candidates,
       absl::string_view description, int position) override;
+  std::vector<SentenceTypoFixForZenz> GetSentenceTypoFixesForZenz(
+      std::string* typed_key) const override;
+  int ReplaceSentenceTypoFixes(
+      absl::Span<const SentenceTypoChoiceToApply> choices,
+      absl::string_view raw) override;
 
   // Fixes the suggestion candidate. Stores the number of characters in the key
   // of the committed candidate to committed_key_size.
@@ -516,6 +521,10 @@ class EngineConverter : public EngineConverterInterface {
   std::vector<int> selected_candidate_indices_;
   // Mozlumi: a typing correction of the whole conversion was offered.
   bool typing_correction_offered_ = false;
+  // Mozlumi: the best sentence typo fixes of the last explicit conversion,
+  // for the session to score with Zenz, and the reading they fix.
+  std::vector<SentenceTypoFixForZenz> sentence_typo_pool_;
+  std::string sentence_typo_pool_key_;
 
   // Indicates whether config_ will be updated by the command candidate.
   converter::Candidate::Command updated_command_;

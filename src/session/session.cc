@@ -55,6 +55,7 @@
 #include "composer/table.h"
 #include "engine/engine_converter_interface.h"
 #include "engine/engine_interface.h"
+#include "prediction/typo_self_fix_store.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "session/ime_context.h"
@@ -66,6 +67,8 @@
 #include "session/zenz_context_assembler.h"
 #include "session/zenz_prompt_builder.h"
 #include "session/zenz_text_privacy_analyzer.h"
+#include "session/zenz_typo_decision.h"
+#include "zenz/zenz_typo_batch.h"
 #include "transliteration/transliteration.h"
 
 #ifdef __APPLE__
@@ -2123,6 +2126,8 @@ void Session::EnsureIMEIsOn() {
 }
 
 bool Session::SendCommand(commands::Command* command) {
+  const ImeContext::State self_fix_state_before = context_->state();
+  const std::string self_fix_raw_before = context_->composer().GetRawString();
   UpdateTime();
   UpdatePreferences(command);
   if (!command->input().has_command()) {
@@ -2308,6 +2313,9 @@ bool Session::SendCommand(commands::Command* command) {
     ClearZenzLiveCorrectionState();
   }
 
+  UpdateRecentCommitContext(*command, context_->state(),
+                            /*from_send_key=*/false);
+  UpdateSelfFixLearning(*command, self_fix_state_before, self_fix_raw_before);
   MaybeSetUndoStatus(command);
   return result;
 }
@@ -2433,6 +2441,8 @@ bool Session::TestSendKey(commands::Command* command) {
 }
 
 bool Session::SendKey(commands::Command* command) {
+  const ImeContext::State recent_commit_state_before = context_->state();
+  const std::string self_fix_raw_before = context_->composer().GetRawString();
   // A new physical key always invalidates a suspended macro, including a
   // reconversion continuation that has not reached the TSF callback yet.
   ++command_sequence_generation_;
@@ -2478,6 +2488,10 @@ bool Session::SendKey(commands::Command* command) {
     ClearZenzLiveCorrectionState();
   }
 
+  UpdateRecentCommitContext(*command, recent_commit_state_before,
+                            /*from_send_key=*/true);
+  UpdateSelfFixLearning(*command, recent_commit_state_before,
+                        self_fix_raw_before);
   MaybeSetUndoStatus(command);
   return result;
 }
@@ -6981,7 +6995,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
       GetZenzLiveCorrectionLeftContextLength(config);
 
   const ZenzClientContextView zenz_client_context =
-      GetZenzClientContextView(context_->client_context());
+      GetZenzContextView();
   ZenzContextAssemblyInput context_input;
   context_input.preceding_text = zenz_client_context.preceding_text;
   context_input.left_max_chars = left_context_len;
@@ -7330,8 +7344,9 @@ bool Session::MaybeScheduleZenzLiveCorrection(
   const uint32_t right_context_len =
       GetZenzLiveCorrectionRightContextLength(config);
 
+  bool zenz_context_from_recent_commit = false;
   const ZenzClientContextView zenz_client_context =
-      GetZenzClientContextView(context_->client_context());
+      GetZenzContextView(&zenz_context_from_recent_commit);
   ZenzContextAssemblyInput context_input;
   context_input.preceding_text = zenz_client_context.preceding_text;
   context_input.following_text = zenz_client_context.following_text;
@@ -7401,6 +7416,7 @@ bool Session::MaybeScheduleZenzLiveCorrection(
       " context_allowed=",
       ZenzBool(assembled_context.left.allowed_for_prompt),
       " context_reason=", assembled_context.left.reason,
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app"),
       " right_context_allowed=",
       ZenzBool(assembled_context.right.allowed_for_prompt),
       " right_context_reason=", assembled_context.right.reason,
@@ -7674,6 +7690,7 @@ void Session::AttachAiCandidatesPollCallback(
 
 void Session::MaybeScheduleAiCandidates(commands::Command* command) {
   ClearAiCandidates();
+  ClearTypoZenz();
   ai_candidate_badge_ = AiCandidateBadge::kNone;
   const config::Config& config = context_->GetConfig();
   if (!config.use_ai_conversion() ||
@@ -7710,8 +7727,9 @@ void Session::MaybeScheduleAiCandidates(commands::Command* command) {
     return;
   }
 
+  bool zenz_context_from_recent_commit = false;
   const ZenzClientContextView zenz_client_context =
-      GetZenzClientContextView(context_->client_context());
+      GetZenzContextView(&zenz_context_from_recent_commit);
   ZenzContextAssemblyInput context_input;
   context_input.preceding_text = zenz_client_context.preceding_text;
   context_input.following_text = zenz_client_context.following_text;
@@ -7756,13 +7774,32 @@ void Session::MaybeScheduleAiCandidates(commands::Command* command) {
       ZenzRedactedTextStats("key", key), " ",
       ZenzRedactedTextStats("mozc_value", mozc_value),
       " segments=", pending_ai_candidates_.baseline_segments.size(),
-      " context_reason=", assembled_context.left.reason));
+      " context_reason=", assembled_context.left.reason,
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app")));
 
   EnsureZenzLiveCorrector()->Submit(std::move(request));
   AttachAiCandidatesPollCallback(command);
 }
 
 bool Session::ApplyAiCandidates(commands::Command* command) {
+  // The typo scoring shares the callback type with the AI candidates.
+  if (pending_typo_zenz_.pending &&
+      command->input().command().live_conversion_generation() ==
+          pending_typo_zenz_.generation) {
+    return ApplyTypoZenz(command);
+  }
+  const bool was_pending = pending_ai_candidates_.pending;
+  const bool result = ApplyAiCandidatesInternal(command);
+  // The AI candidate is done (applied, rejected or timed out): the typo
+  // scoring goes next on the same Zenz worker.
+  if (was_pending && !pending_ai_candidates_.pending &&
+      !command->output().has_callback()) {
+    MaybeScheduleTypoZenz(command);
+  }
+  return result;
+}
+
+bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
   command->mutable_output()->set_consumed(true);
   const commands::SessionCommand& session_command = command->input().command();
   const bool current_generation =
@@ -7891,6 +7928,359 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
       " applied=", inserted, " first=", ZenzBool(ai_first),
       " skipped_aggregates=", aggregates, " ",
       ZenzRedactedTextStats("value", prefix.value)));
+  Output(command);
+  return true;
+}
+
+void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
+
+void Session::UpdateSelfFixLearning(const commands::Command& command,
+                                    ImeContext::State state_before,
+                                    const std::string& raw_before) {
+  if (!context_->GetConfig().use_typing_correction() ||
+      context_->composer().GetInputFieldType() ==
+          commands::Context::PASSWORD) {
+    self_fix_converted_raws_.clear();
+    return;
+  }
+  // A fix typed long after the conversion is not a fix of it.
+  constexpr absl::Duration kMaxFixDelay = absl::Minutes(2);
+  constexpr size_t kMaxConvertedRaws = 4;
+  const absl::Time now = Clock::GetAbslTime();
+  self_fix_converted_raws_.erase(
+      std::remove_if(self_fix_converted_raws_.begin(),
+                     self_fix_converted_raws_.end(),
+                     [&](const auto& entry) {
+                       return now - entry.second > kMaxFixDelay;
+                     }),
+      self_fix_converted_raws_.end());
+
+  const commands::Output& output = command.output();
+  if (output.has_result() && !output.result().value().empty()) {
+    if (state_before == ImeContext::CONVERSION ||
+        state_before == ImeContext::COMPOSITION) {
+      for (auto it = self_fix_converted_raws_.rbegin();
+           it != self_fix_converted_raws_.rend(); ++it) {
+        if (it->first != raw_before &&
+            prediction::TypoSelfFixStore::Get()->Learn(it->first,
+                                                       raw_before)) {
+          // The text itself is not logged.
+          ZenzDebugOutput("[typo-self-fix] learned");
+          break;
+        }
+      }
+    }
+    self_fix_converted_raws_.clear();
+    return;
+  }
+
+  if (state_before != ImeContext::CONVERSION &&
+      context_->state() == ImeContext::CONVERSION) {
+    const std::string raw = context_->composer().GetRawString();
+    if (!raw.empty() && (self_fix_converted_raws_.empty() ||
+                         self_fix_converted_raws_.back().first != raw)) {
+      self_fix_converted_raws_.emplace_back(raw, now);
+      if (self_fix_converted_raws_.size() > kMaxConvertedRaws) {
+        self_fix_converted_raws_.erase(self_fix_converted_raws_.begin());
+      }
+    }
+  }
+}
+
+ZenzClientContextView Session::GetZenzContextView(
+    bool* from_recent_commit) const {
+  if (from_recent_commit != nullptr) {
+    *from_recent_commit = false;
+  }
+  const commands::Context& client_context = context_->client_context();
+  ZenzClientContextView view = GetZenzClientContextView(client_context);
+  // Any preceding text field (even an empty one) means the application
+  // answered; then its answer is used as it is.
+  if (client_context.has_preceding_text() ||
+      client_context.has_zenz_preceding_text() ||
+      context_->composer().GetInputFieldType() ==
+          commands::Context::PASSWORD) {
+    return view;
+  }
+  const absl::string_view recent =
+      recent_commit_context_.Get(Clock::GetAbslTime());
+  if (recent.empty()) {
+    return view;
+  }
+  view.preceding_text = recent;
+  if (from_recent_commit != nullptr) {
+    *from_recent_commit = true;
+  }
+  return view;
+}
+
+void Session::UpdateRecentCommitContext(const commands::Command& command,
+                                        ImeContext::State state_before,
+                                        bool from_send_key) {
+  if (context_->composer().GetInputFieldType() ==
+      commands::Context::PASSWORD) {
+    recent_commit_context_.Clear();
+    return;
+  }
+  const absl::Time now = Clock::GetAbslTime();
+  const commands::Output& output = command.output();
+  if (output.has_result() && !output.result().value().empty()) {
+    recent_commit_context_.OnCommit(output.result().value(), now);
+  }
+
+  // Below: a key that went to the application as it is.
+  if (!from_send_key || output.consumed() || !command.input().has_key() ||
+      (state_before != ImeContext::PRECOMPOSITION &&
+       state_before != ImeContext::DIRECT)) {
+    return;
+  }
+  const commands::KeyEvent& key = command.input().key();
+  for (const int modifier : key.modifier_keys()) {
+    if (modifier != commands::KeyEvent::SHIFT &&
+        modifier != commands::KeyEvent::LEFT_SHIFT &&
+        modifier != commands::KeyEvent::RIGHT_SHIFT &&
+        modifier != commands::KeyEvent::CAPS) {
+      // A shortcut may change the text in unknown ways.
+      recent_commit_context_.Clear();
+      return;
+    }
+  }
+  if (!key.has_special_key()) {
+    if (key.has_key_code() && key.key_code() >= 0x20 &&
+        key.key_code() < 0x7f) {
+      // A character typed directly (for example, in alphanumeric mode).
+      recent_commit_context_.OnCommit(
+          std::string(1, static_cast<char>(key.key_code())), now);
+    }
+    return;
+  }
+  switch (key.special_key()) {
+    case commands::KeyEvent::ENTER:
+      recent_commit_context_.OnLineBreak(now);
+      break;
+    case commands::KeyEvent::BACKSPACE:
+      recent_commit_context_.OnBackspace(now);
+      break;
+    case commands::KeyEvent::SPACE:
+      recent_commit_context_.OnCommit(" ", now);
+      break;
+    case commands::KeyEvent::ESCAPE:
+      break;
+    default:
+      // Cursor movement, Delete, Tab and others: the text before the
+      // cursor is no longer known.
+      recent_commit_context_.Clear();
+      break;
+  }
+}
+
+void Session::AttachTypoZenzPollCallback(commands::Command* command) const {
+  commands::Output::Callback* callback =
+      command->mutable_output()->mutable_callback();
+  commands::SessionCommand* session_command =
+      callback->mutable_session_command();
+  session_command->set_type(commands::SessionCommand::APPLY_AI_CANDIDATES);
+  session_command->set_live_conversion_generation(
+      pending_typo_zenz_.generation);
+  session_command->set_live_conversion_key(pending_typo_zenz_.key);
+  callback->set_delay_millisec(kDefaultZenzLiveCorrectionPollMsec);
+}
+
+void Session::MaybeScheduleTypoZenz(commands::Command* command) {
+  ClearTypoZenz();
+  const config::Config& config = context_->GetConfig();
+  if (!config.use_ai_conversion() || !config.use_typing_correction() ||
+      context_->state() != ImeContext::CONVERSION ||
+      context_->composer().GetInputFieldType() ==
+          commands::Context::PASSWORD ||
+      command->output().has_callback()) {
+    return;
+  }
+  std::string typed_key;
+  std::vector<engine::SentenceTypoFixForZenz> fixes =
+      context_->converter().GetSentenceTypoFixesForZenz(&typed_key);
+  if (fixes.empty() || typed_key.empty() ||
+      typed_key != context_->composer().GetQueryForConversion()) {
+    return;
+  }
+  if (!EvaluateZenzLiveKeyPrivacy(typed_key).allow) {
+    ZenzDebugOutput("[typo-zenz] skip privacy");
+    return;
+  }
+  fixes.erase(std::remove_if(fixes.begin(), fixes.end(),
+                             [](const engine::SentenceTypoFixForZenz& f) {
+                               return !EvaluateZenzLiveKeyPrivacy(f.key).allow;
+                             }),
+              fixes.end());
+  if (fixes.empty()) {
+    return;
+  }
+
+  bool zenz_context_from_recent_commit = false;
+  const ZenzClientContextView zenz_client_context =
+      GetZenzContextView(&zenz_context_from_recent_commit);
+  ZenzContextAssemblyInput context_input;
+  context_input.preceding_text = zenz_client_context.preceding_text;
+  context_input.following_text = zenz_client_context.following_text;
+  context_input.left_max_chars = GetZenzLiveCorrectionLeftContextLength(config);
+  context_input.right_max_chars =
+      GetZenzLiveCorrectionRightContextLength(config);
+  const ZenzContextAssemblyResult assembled_context =
+      zenz_context_assembler_.Assemble(context_input);
+  ZenzPromptOptions prompt_options;
+  prompt_options.left_context = assembled_context.left.prompt_context;
+  prompt_options.right_context = assembled_context.right.prompt_context;
+  prompt_options.profile = config.zenz_live_correction_profile();
+  prompt_options.topic = config.zenz_live_correction_topic();
+  prompt_options.style = config.zenz_live_correction_style();
+  prompt_options.settings = config.zenz_live_correction_settings();
+  ZenzPromptBuilder prompt_builder;
+
+  // The prompt for an empty reading ends with the output marker U+EE01;
+  // without it, it is the prefix shared by all the readings.
+  constexpr absl::string_view kOutputBegin = "\xEE\xB8\x81";
+  std::string prefix = prompt_builder.Build("", prompt_options);
+  if (!absl::EndsWith(prefix, kOutputBegin)) {
+    return;
+  }
+  prefix.resize(prefix.size() - kOutputBegin.size());
+  std::vector<std::string> forced;
+  forced.push_back(
+      absl::StrCat(prompt_builder.HiraganaToKatakana(typed_key), kOutputBegin));
+  for (const engine::SentenceTypoFixForZenz& fix : fixes) {
+    forced.push_back(
+        absl::StrCat(prompt_builder.HiraganaToKatakana(fix.key), kOutputBegin));
+  }
+
+  ++zenz_live_generation_;
+  ZenzLiveRequest request;
+  request.generation = zenz_live_generation_;
+  request.key = typed_key;
+  request.prompt = zenz::EncodeZenzTypoBatchPrompt(prefix, forced);
+  request.reading_katakana = prompt_builder.HiraganaToKatakana(typed_key);
+  request.left_context = assembled_context.left.prompt_context;
+  request.pipe_name = config.zenz_live_correction_pipe_name();
+  request.timeout_msec = 1500;
+  request.max_output_chars = 256;
+  request.issued_at = Clock::GetAbslTime();
+
+  pending_typo_zenz_.pending = true;
+  pending_typo_zenz_.generation = request.generation;
+  pending_typo_zenz_.key = typed_key;
+  pending_typo_zenz_.left_context = request.left_context;
+  pending_typo_zenz_.fixes = std::move(fixes);
+  pending_typo_zenz_.issued_at = request.issued_at;
+
+  const size_t offered = std::count_if(
+      pending_typo_zenz_.fixes.begin(), pending_typo_zenz_.fixes.end(),
+      [](const engine::SentenceTypoFixForZenz& f) { return f.offered; });
+  ZenzDebugOutput(absl::StrCat(
+      "[typo-zenz] submit generation=", request.generation,
+      " fixes=", pending_typo_zenz_.fixes.size(), " offered=", offered,
+      " context_reason=", assembled_context.left.reason,
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app")));
+  EnsureZenzLiveCorrector()->Submit(std::move(request));
+  AttachTypoZenzPollCallback(command);
+}
+
+bool Session::ApplyTypoZenz(commands::Command* command) {
+  command->mutable_output()->set_consumed(true);
+  if (context_->state() != ImeContext::CONVERSION ||
+      context_->composer().GetQueryForConversion() != pending_typo_zenz_.key ||
+      zenz_live_corrector_ == nullptr) {
+    ZenzDebugOutput("[typo-zenz] dropped: conversion changed");
+    ClearTypoZenz();
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  std::optional<ZenzLiveResponse> response =
+      zenz_live_corrector_->TakeResult(pending_typo_zenz_.generation);
+  if (!response.has_value()) {
+    ++pending_typo_zenz_.poll_count;
+    Output(command);
+    if (Clock::GetAbslTime() - pending_typo_zenz_.issued_at >=
+        absl::Milliseconds(kZenzLiveCorrectionAsyncWaitMsec)) {
+      ZenzDebugOutput("[typo-zenz] no result reason=timeout");
+      ClearTypoZenz();
+      return true;
+    }
+    AttachTypoZenzPollCallback(command);
+    return true;
+  }
+
+  const PendingTypoZenz pending = std::move(pending_typo_zenz_);
+  ClearTypoZenz();
+
+  std::vector<zenz::ZenzTypoBatchResult> results;
+  if (!response->ok || response->timeout ||
+      !zenz::DecodeZenzTypoBatchResponse(response->value, &results) ||
+      results.size() != pending.fixes.size() + 1) {
+    ZenzDebugOutput(absl::StrCat(
+        "[typo-zenz] response not usable timeout=",
+        ZenzBool(response->timeout), " reason=",
+        ZenzSafeDebugReason(response->debug)));
+    Output(command);
+    return true;
+  }
+
+  const config::Config& config = context_->GetConfig();
+  std::vector<ZenzTypoScoredFix> scored;
+  for (size_t i = 0; i < pending.fixes.size(); ++i) {
+    const engine::SentenceTypoFixForZenz& fix = pending.fixes[i];
+    const zenz::ZenzTypoBatchResult& result = results[i + 1];
+    ZenzTypoScoredFix s;
+    s.key = fix.key;
+    s.mozc_value = fix.value;
+    s.edit = fix.edit;
+    s.typo_cost = fix.typo_cost;
+    s.offered = fix.offered;
+    s.scored = result.ok;
+    s.logprob = result.forced_logprob + result.value_logprob;
+    if (result.ok && !result.value.empty()) {
+      // Zenz's conversion of the fixed reading, when it passes the same
+      // checks as an AI candidate. Otherwise Mozc's conversion is used.
+      ZenzValidationInput validation_input;
+      validation_input.key = fix.key;
+      validation_input.mozc_value = fix.value;
+      validation_input.zenz_value = result.value;
+      validation_input.left_context = pending.left_context;
+      validation_input.min_key_length = 0;
+      validation_input.allow_synthetic_candidate = true;
+      validation_input.allow_zenz_emoji_changes =
+          config.allow_zenz_emoji_changes();
+      if (result.value == fix.value ||
+          zenz_output_validator_.Validate(validation_input).accept) {
+        s.zenz_value = result.value;
+      }
+    }
+    scored.push_back(std::move(s));
+  }
+  std::string trace;
+  const std::vector<ZenzTypoChoice> choices = DecideZenzTypoChoices(
+      results[0].ok, results[0].forced_logprob + results[0].value_logprob,
+      scored, ZenzTypoDecisionOptions(), &trace);
+
+  std::vector<engine::SentenceTypoChoiceToApply> to_apply;
+  size_t from_zenz = 0;
+  for (const ZenzTypoChoice& choice : choices) {
+    to_apply.push_back({choice.key, choice.value, choice.edit,
+                        choice.from_zenz ? "AI補正" : "補正"});
+    if (choice.from_zenz) {
+      ++from_zenz;
+    }
+  }
+  const int shown = context_->mutable_converter()->ReplaceSentenceTypoFixes(
+      to_apply, context_->composer().GetRawString());
+  ZenzDebugOutput(absl::StrCat(
+      "[typo-zenz] result typed_ok=", ZenzBool(results[0].ok),
+      " fixes=", pending.fixes.size(), " choices=", choices.size(),
+      " from_zenz=", from_zenz,
+      shown < 0 ? " list=unchanged(user moved)"
+                : absl::StrCat(" shown=", shown),
+      " latency_ms=",
+      absl::ToInt64Milliseconds(Clock::GetAbslTime() - pending.issued_at),
+      " debug=", ZenzSafeDebugReason(response->debug), " decision=[", trace,
+      "]"));
   Output(command);
   return true;
 }
@@ -10701,6 +11091,9 @@ bool Session::Convert(commands::Command* command) {
   }
   Output(command);
   MaybeScheduleAiCandidates(command);
+  if (!pending_ai_candidates_.pending) {
+    MaybeScheduleTypoZenz(command);
+  }
   return true;
 }
 

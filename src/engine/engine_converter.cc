@@ -65,6 +65,7 @@
 #include "protocol/candidate_window.pb.h"
 #include "prediction/roman_typo_candidates.h"
 #include "prediction/typo_habit_store.h"
+#include "prediction/typo_self_fix_store.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "request/conversion_request.h"
@@ -266,6 +267,8 @@ bool EngineConverter::Convert(const composer::Composer& composer,
   DCHECK(CheckState(COMPOSITION | SUGGESTION | CONVERSION));
   focused_suggestion_for_learning_ = false;
   typing_correction_offered_ = false;
+  sentence_typo_pool_.clear();
+  sentence_typo_pool_key_.clear();
 
   DCHECK(request_);
   DCHECK(config_);
@@ -1466,21 +1469,107 @@ bool EngineConverter::AddSentenceTypoFixes(const composer::Composer& composer,
   if (top_segment->candidates_size() == 0) {
     return false;
   }
+  // Mozlumi: fixes the user taught by typing the input again
+  // (TypoSelfFixStore, learned by the session). They are offered first, even
+  // when the typed text converts naturally (一寸 for "issunn" meant as 一瞬).
+  constexpr size_t kMaxLearnedFixes = 2;
+  const std::string typed_value = SentenceValue(segments_);
+  std::vector<SentenceTypoCandidate> learned;
+  for (const prediction::TypoSelfFixStore::Fix& f :
+       prediction::TypoSelfFixStore::Get()->FindFixes(composer.GetRawString(),
+                                                      kMaxLearnedFixes)) {
+    std::optional<SentenceTypoCandidate> c = ConvertSentenceTypoFix(
+        *converter_, composer, f.romaji, *request_, *config_, context,
+        conversion_preferences_.use_history, options);
+    if (!c.has_value() || c->key == composer.GetQueryForConversion() ||
+        c->value == typed_value ||
+        std::any_of(learned.begin(), learned.end(),
+                    [&](const SentenceTypoCandidate& l) {
+                      return l.value == c->value;
+                    })) {
+      continue;
+    }
+    c->edit = "learned";
+    c->typo_cost = 0.5f;
+    learned.push_back(std::move(*c));
+  }
+
   prediction::TypoHabitStore* habits = prediction::TypoHabitStore::Get();
   const SentenceTypoAnalysis analysis = AnalyzeSentenceTypos(
       *converter_, composer, segments_, *request_, *config_, context,
       conversion_preferences_.use_history, options, habits);
   const std::vector<size_t> offers =
       RankSentenceTypoOffers(analysis, decision, kMaxOffers);
-  if (offers.empty()) {
+
+  // Mozlumi: keep the best fixes (Mozc's offers among them) so that the
+  // session can score them with Zenz and the context after the conversion
+  // is shown (eval/zenz_typo_eval.py: 4 fixes are enough).
+  {
+    constexpr size_t kMaxFixesForZenz = 4;
+    const std::string typed_key = composer.GetQueryForConversion();
+    std::vector<std::pair<double, size_t>> ranked;
+    for (size_t i = 0; i < analysis.candidates.size(); ++i) {
+      const SentenceTypoCandidate& c = analysis.candidates[i];
+      const bool two_edits = c.edit.find('|') != std::string::npos;
+      ranked.emplace_back(static_cast<double>(c.sentence_cost) +
+                              decision.cost_per_typo * c.typo_cost +
+                              (two_edits ? decision.two_edit_penalty : 0),
+                          i);
+    }
+    std::stable_sort(ranked.begin(), ranked.end());
+    sentence_typo_pool_.clear();
+    for (const SentenceTypoCandidate& c : learned) {
+      SentenceTypoFixForZenz fix;
+      fix.key = c.key;
+      fix.value = c.value;
+      fix.edit = c.edit;
+      fix.typo_cost = c.typo_cost;
+      fix.offered = true;
+      sentence_typo_pool_.push_back(std::move(fix));
+    }
+    for (const auto& [score, index] : ranked) {
+      if (sentence_typo_pool_.size() >= kMaxFixesForZenz) {
+        break;
+      }
+      const SentenceTypoCandidate& c = analysis.candidates[index];
+      const bool latin = std::any_of(c.key.begin(), c.key.end(), [](char ch) {
+        return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+      });
+      if (c.key.empty() || c.value.empty() || latin || c.key == typed_key ||
+          std::any_of(sentence_typo_pool_.begin(), sentence_typo_pool_.end(),
+                      [&](const SentenceTypoFixForZenz& f) {
+                        return f.key == c.key;
+                      })) {
+        continue;
+      }
+      SentenceTypoFixForZenz fix;
+      fix.key = c.key;
+      fix.value = c.value;
+      fix.edit = c.edit;
+      fix.typo_cost = c.typo_cost;
+      fix.offered =
+          std::find(offers.begin(), offers.end(), index) != offers.end();
+      sentence_typo_pool_.push_back(std::move(fix));
+    }
+    sentence_typo_pool_key_ = sentence_typo_pool_.empty() ? "" : typed_key;
+  }
+
+  if (offers.empty() && learned.empty()) {
     return false;
   }
 
   const std::string raw = composer.GetRawString();
   const uint32_t span = segments_.conversion_segments_size();
   int position = 1;
+  std::vector<const SentenceTypoCandidate*> fixes_to_add;
+  for (const SentenceTypoCandidate& fix : learned) {
+    fixes_to_add.push_back(&fix);
+  }
   for (const size_t index : offers) {
-    const SentenceTypoCandidate& fix = analysis.candidates[index];
+    fixes_to_add.push_back(&analysis.candidates[index]);
+  }
+  for (const SentenceTypoCandidate* fix_ptr : fixes_to_add) {
+    const SentenceTypoCandidate& fix = *fix_ptr;
     bool duplicated = false;
     for (size_t j = 0; j < top_segment->candidates_size(); ++j) {
       const converter::Candidate& existing = top_segment->candidate(j);
@@ -1510,7 +1599,9 @@ bool EngineConverter::AddSentenceTypoFixes(const composer::Composer& composer,
     top_segment->insert_candidate(
         std::min<int>(position, static_cast<int>(top_segment->candidates_size())),
         std::move(candidate));
-    habits->Remember(raw, fix.key, fix.edit);
+    if (fix.edit != "learned") {
+      habits->Remember(raw, fix.key, fix.edit);
+    }
     ++position;
   }
   const int added = position - 1;
@@ -1539,6 +1630,100 @@ void EngineConverter::MaybeLearnTypingCorrection(
   }
   prediction::TypoHabitStore::Get()->LearnCommitted(composer.GetRawString(),
                                                     candidate.key);
+}
+
+std::vector<SentenceTypoFixForZenz>
+EngineConverter::GetSentenceTypoFixesForZenz(std::string* typed_key) const {
+  if (!CheckState(CONVERSION) || sentence_typo_pool_.empty()) {
+    typed_key->clear();
+    return {};
+  }
+  *typed_key = sentence_typo_pool_key_;
+  return sentence_typo_pool_;
+}
+
+int EngineConverter::ReplaceSentenceTypoFixes(
+    absl::Span<const SentenceTypoChoiceToApply> choices,
+    absl::string_view raw) {
+  if (!CheckState(CONVERSION) || segments_.conversion_segments_size() == 0 ||
+      sentence_typo_pool_.empty()) {
+    return -1;
+  }
+  // Do not change the list under the user.
+  if (segment_index_ != 0 || candidate_list_.focused_id() != 0 ||
+      (!selected_candidate_indices_.empty() &&
+       selected_candidate_indices_[0] != 0)) {
+    return -1;
+  }
+  Segment* top_segment = segments_.mutable_conversion_segment(0);
+  if (top_segment->candidates_size() == 0) {
+    return -1;
+  }
+  const uint32_t span = segments_.conversion_segments_size();
+
+  // Removes the sentence fixes offered by Mozc's rule.
+  for (int i = static_cast<int>(top_segment->candidates_size()) - 1; i >= 1;
+       --i) {
+    const converter::Candidate& c = top_segment->candidate(i);
+    if (!(c.attributes & converter::Attribute::TYPING_CORRECTION) ||
+        c.effective_converted_segment_count() != span) {
+      continue;
+    }
+    const bool in_pool = std::any_of(
+        sentence_typo_pool_.begin(), sentence_typo_pool_.end(),
+        [&](const SentenceTypoFixForZenz& f) { return f.key == c.key; });
+    if (in_pool) {
+      top_segment->erase_candidate(i);
+    }
+  }
+
+  prediction::TypoHabitStore* habits = prediction::TypoHabitStore::Get();
+  const std::string raw_string(raw);
+  int position = 1;
+  for (const SentenceTypoChoiceToApply& choice : choices) {
+    if (choice.key.empty() || choice.value.empty()) {
+      continue;
+    }
+    bool duplicated = false;
+    for (size_t j = 0; j < top_segment->candidates_size(); ++j) {
+      const converter::Candidate& existing = top_segment->candidate(j);
+      if (existing.value == choice.value &&
+          existing.effective_converted_segment_count() == span) {
+        duplicated = true;
+        break;
+      }
+    }
+    if (duplicated) {
+      continue;
+    }
+    auto candidate =
+        std::make_unique<converter::Candidate>(top_segment->candidate(0));
+    candidate->key = choice.key;
+    candidate->content_key = choice.key;
+    candidate->value = choice.value;
+    candidate->content_value = choice.value;
+    candidate->converted_segment_count = span;
+    candidate->inner_segment_boundary = converter::InnerSegmentBoundary();
+    candidate->proper_noun_spans.clear();
+    candidate->attributes &= ~converter::Attribute::BEST_CANDIDATE;
+    candidate->attributes |= converter::Attribute::TYPING_CORRECTION;
+    candidate->description = choice.description;
+    candidate->a11y_description.clear();
+    candidate->display_value.clear();
+    top_segment->insert_candidate(
+        std::min<int>(position,
+                      static_cast<int>(top_segment->candidates_size())),
+        std::move(candidate));
+    if (!raw_string.empty() && !choice.edit.empty()) {
+      habits->Remember(raw_string, choice.key, choice.edit);
+    }
+    ++position;
+  }
+  const int added = position - 1;
+  typing_correction_offered_ = added > 0;
+  UpdateCandidateList();
+  candidate_list_.MoveToId(0);
+  return added;
 }
 
 size_t EngineConverter::InsertExternalSegmentCandidates(
@@ -2531,6 +2716,8 @@ void EngineConverter::ResetResult() { result_.Clear(); }
 void EngineConverter::ResetState() {
   focused_suggestion_for_learning_ = false;
   typing_correction_offered_ = false;
+  sentence_typo_pool_.clear();
+  sentence_typo_pool_key_.clear();
   state_ = COMPOSITION;
   segment_index_ = 0;
   previous_suggestions_.clear();

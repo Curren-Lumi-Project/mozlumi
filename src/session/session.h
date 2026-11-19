@@ -45,17 +45,20 @@
 #include "absl/time/time.h"
 #include "composer/composer.h"
 #include "composer/table.h"
+#include "engine/engine_converter_interface.h"
 #include "engine/engine_interface.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 #include "session/ime_context.h"
 #include "session/keymap.h"
 #include "session/zenz_adoption_policy.h"
+#include "session/zenz_client_context.h"
 #include "session/zenz_context_assembler.h"
 #include "session/zenz_context_sanitizer.h"
 #include "session/zenz_feedback_store.h"
 #include "session/zenz_live_corrector.h"
 #include "session/zenz_output_validator.h"
+#include "session/zenz_recent_commit_context.h"
 #include "session/zenz_segment_projection.h"
 #include "transliteration/transliteration.h"
 
@@ -533,6 +536,23 @@ class Session {
     uint32_t poll_count = 0;
   };
   PendingAiCandidates pending_ai_candidates_;
+
+  struct PendingTypoZenz {
+    bool pending = false;
+    uint32_t generation = 0;
+    std::string key;
+    std::string left_context;
+    std::vector<engine::SentenceTypoFixForZenz> fixes;
+    absl::Time issued_at;
+    uint32_t poll_count = 0;
+  };
+  PendingTypoZenz pending_typo_zenz_;
+  // Mozlumi: recently committed text, Zenz's left context for applications
+  // that do not provide surrounding text. Memory only.
+  ZenzRecentCommitContext recent_commit_context_;
+  // Mozlumi: romaji inputs converted before the next commit, to learn a typo
+  // that the user fixes by typing again (prediction::TypoSelfFixStore).
+  std::vector<std::pair<std::string, absl::Time>> self_fix_converted_raws_;
   // Mozlumi: shown on the conversion status badge for the current conversion.
   enum class AiCandidateBadge { kNone, kAvailable, kApplied };
   AiCandidateBadge ai_candidate_badge_ = AiCandidateBadge::kNone;
@@ -848,8 +868,32 @@ class Session {
   // Mozlumi: AI candidates.
   void MaybeScheduleAiCandidates(commands::Command* command);
   bool ApplyAiCandidates(commands::Command* command);
+  bool ApplyAiCandidatesInternal(commands::Command* command);
   void AttachAiCandidatesPollCallback(commands::Command* command) const;
   void ClearAiCandidates();
+
+  // Mozlumi: scores the sentence typo fixes with Zenz and the context, after
+  // the conversion (and its AI candidate) is shown, and replaces the fixes
+  // in the candidate list with the ones Zenz prefers.
+  void MaybeScheduleTypoZenz(commands::Command* command);
+  bool ApplyTypoZenz(commands::Command* command);
+  void AttachTypoZenzPollCallback(commands::Command* command) const;
+  void ClearTypoZenz();
+  // Mozlumi: the client context for Zenz. When the application provided no
+  // preceding text at all, recently committed text is used instead
+  // (`*from_recent_commit` tells which).
+  ZenzClientContextView GetZenzContextView(
+      bool* from_recent_commit = nullptr) const;
+  // Mozlumi: remembers committed text and follows Enter / Backspace / cursor
+  // keys that the application received.
+  void UpdateRecentCommitContext(const commands::Command& command,
+                                 ImeContext::State state_before,
+                                 bool from_send_key);
+  // Mozlumi: remembers converted inputs, and when the committed input differs
+  // from one of them by a small edit, learns it as the user's typo fix.
+  void UpdateSelfFixLearning(const commands::Command& command,
+                             ImeContext::State state_before,
+                             const std::string& raw_before);
   bool ApplyZenzLiveCorrectionResult(
       const ZenzLiveResponse& response,
       mozc::commands::Command* command);

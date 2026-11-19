@@ -128,6 +128,15 @@ SentenceTypoAnalysis AnalyzeSentenceTypos(
     bool use_history, const SentenceTypoOptions& options,
     const prediction::TypoHabitStore* habits);
 
+// Mozlumi: converts `romaji`, a fix of the input of `composer` (for example,
+// one the user taught by retyping), the same way as AnalyzeSentenceTypos.
+// Returns nullopt when it does not become kana only or is not converted.
+std::optional<SentenceTypoCandidate> ConvertSentenceTypoFix(
+    const ConverterInterface& converter, const composer::Composer& composer,
+    const std::string& romaji, const commands::Request& request,
+    const config::Config& config, const commands::Context& context,
+    bool use_history, const SentenceTypoOptions& options);
+
 // Returns the index of the chosen candidate, if any.
 std::optional<size_t> ChooseSentenceTypoFix(
     const SentenceTypoAnalysis& analysis,

@@ -65,6 +65,16 @@ TEST(RomanTypoCandidatesTest, VowelTypoIsPreferredOverDroppingN) {
   EXPECT_LT(CostOf(candidates, "sinkai"), CostOf(candidates, "sukai"));
 }
 
+TEST(RomanTypoCandidatesTest, LongVowelSpelling) {
+  // Not QWERTY neighbors, but the same long vowel spelled as it sounds.
+  const auto candidates = GenerateRomanTypoCandidates("syooryuuken");
+  EXPECT_TRUE(Contains(candidates, "syouryuuken"));  // 昇竜拳
+  EXPECT_LT(CostOf(candidates, "syouryuuken"), 1.0f);
+  EXPECT_TRUE(Contains(GenerateRomanTypoCandidates("eega"), "eiga"));  // 映画
+  EXPECT_TRUE(Contains(GenerateRomanTypoCandidates("toui"), "tooi"));  // 遠い
+  EXPECT_TRUE(Contains(GenerateRomanTypoCandidates("keeki"), "keiki"));
+}
+
 TEST(RomanTypoCandidatesTest, Transposition) {
   EXPECT_TRUE(Contains(GenerateRomanTypoCandidates("sunkai"), "suknai"));
 }

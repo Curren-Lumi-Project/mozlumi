@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <optional>
@@ -700,6 +701,20 @@ std::string BuildJsonBody(const LlamaHttpCompletionRequest& request,
   body += "\"top_p\":1.0,";
   body += "\"stream\":false,";
   body += "\"cache_prompt\":true,";
+  if (!request.grammar.empty()) {
+    body += "\"grammar\":\"";
+    body += JsonEscapeUtf8(request.grammar);
+    body += "\",";
+  }
+  if (request.n_probs > 0) {
+    body += "\"n_probs\":" + std::to_string(std::min(request.n_probs, 5)) + ",";
+    body += "\"post_sampling_probs\":false,";
+  }
+  if (!request.grammar.empty()) {
+    body += "\"stop\":[\"\\n\",\"\\r\"]";
+    body += "}";
+    return body;
+  }
   body += "\"stop\":["
           "\"\\uee00\",\"\\uee01\",\"\\uee02\",\"\\uee03\","
           "\"\\uee04\",\"\\uee05\",\"\\uee06\",\"\\uee07\","
@@ -923,7 +938,14 @@ LlamaHttpCompletionResponse PostLlamaHttpCompletion(
   if (!ExtractJsonStringField(response_body, "content", &content)) {
     return Error("content_field_not_found");
   }
-  content = CleanGeneratedText(std::move(content), max_output_chars);
+  std::vector<LlamaHttpTokenLogprob> token_logprobs;
+  if (request.n_probs > 0 &&
+      !ParseLlamaHttpTokenLogprobs(response_body, &token_logprobs)) {
+    return Error("logprobs_not_found");
+  }
+  if (request.grammar.empty()) {
+    content = CleanGeneratedText(std::move(content), max_output_chars);
+  }
   if (content.empty()) {
     return Error("empty_content");
   }
@@ -932,7 +954,134 @@ LlamaHttpCompletionResponse PostLlamaHttpCompletion(
   response.status = LlamaHttpCompletionStatus::kOk;
   response.value = std::move(content);
   response.debug = "ok";
+  response.token_logprobs = std::move(token_logprobs);
   return response;
+}
+
+bool ParseLlamaHttpTokenLogprobs(const std::string& json,
+                                 std::vector<LlamaHttpTokenLogprob>* tokens) {
+  tokens->clear();
+  size_t p = json.find("\"completion_probabilities\"");
+  if (p == std::string::npos) {
+    return false;
+  }
+  p = json.find(':', p);
+  if (p == std::string::npos) {
+    return false;
+  }
+  ++p;
+  while (p < json.size() && (json[p] == ' ' || json[p] == '\n' ||
+                             json[p] == '\r' || json[p] == '\t')) {
+    ++p;
+  }
+  if (p >= json.size() || json[p] != '[') {
+    return false;
+  }
+
+  // depth 1: inside the array; depth 2: inside one token object.
+  int depth = 0;
+  LlamaHttpTokenLogprob current;
+  bool has_logprob = false;
+  auto skip_string = [&](size_t* pos, std::string* text) {
+    // *pos is at the opening quote.
+    ++*pos;
+    while (*pos < json.size()) {
+      const char ch = json[(*pos)++];
+      if (ch == '\\') {
+        if (text) text->push_back(ch);
+        if (*pos < json.size()) {
+          if (text) text->push_back(json[*pos]);
+          ++*pos;
+        }
+        continue;
+      }
+      if (ch == '"') {
+        return true;
+      }
+      if (text) text->push_back(ch);
+    }
+    return false;
+  };
+  while (p < json.size()) {
+    const char ch = json[p];
+    if (ch == '"') {
+      std::string text;
+      if (!skip_string(&p, depth == 2 ? &text : nullptr)) {
+        return false;
+      }
+      if (depth != 2) {
+        continue;
+      }
+      size_t q = p;
+      while (q < json.size() && (json[q] == ' ' || json[q] == '\n' ||
+                                 json[q] == '\r' || json[q] == '\t')) {
+        ++q;
+      }
+      if (q >= json.size() || json[q] != ':') {
+        continue;  // A string value, not a key.
+      }
+      ++q;
+      while (q < json.size() && (json[q] == ' ' || json[q] == '\n' ||
+                                 json[q] == '\r' || json[q] == '\t')) {
+        ++q;
+      }
+      if (text == "logprob") {
+        const char* begin = json.c_str() + q;
+        char* end = nullptr;
+        const double value = std::strtod(begin, &end);
+        if (end == begin) {
+          return false;
+        }
+        current.logprob = value;
+        has_logprob = true;
+        p = q + static_cast<size_t>(end - begin);
+        continue;
+      }
+      if (text == "bytes") {
+        if (q >= json.size() || json[q] != '[') {
+          return false;
+        }
+        const size_t close = json.find(']', q);
+        if (close == std::string::npos) {
+          return false;
+        }
+        size_t count = 0;
+        bool in_number = false;
+        for (size_t i = q + 1; i < close; ++i) {
+          const bool digit = json[i] >= '0' && json[i] <= '9';
+          if (digit && !in_number) {
+            ++count;
+          }
+          in_number = digit;
+        }
+        current.bytes = count;
+        p = close + 1;
+        continue;
+      }
+      p = q;
+      continue;
+    }
+    if (ch == '[' || ch == '{') {
+      ++depth;
+      if (depth == 2 && ch == '{') {
+        current = LlamaHttpTokenLogprob();
+        has_logprob = false;
+      }
+    } else if (ch == ']' || ch == '}') {
+      if (depth == 2 && ch == '}') {
+        if (!has_logprob) {
+          return false;
+        }
+        tokens->push_back(current);
+      }
+      --depth;
+      if (depth == 0) {
+        return true;
+      }
+    }
+    ++p;
+  }
+  return false;
 }
 
 }  // namespace zenz_scorer

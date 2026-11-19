@@ -84,6 +84,24 @@ struct ExternalSegmentCandidate {
   std::string value;
 };
 
+// Mozlumi: one of the best sentence typo fixes of the last explicit
+// conversion, scored with Zenz by the session.
+struct SentenceTypoFixForZenz {
+  std::string key;    // Hiragana reading.
+  std::string value;  // Mozc's conversion of the reading.
+  std::string edit;
+  float typo_cost = 0.0f;
+  bool offered = false;  // Offered by Mozc's rule.
+};
+
+// Mozlumi: a sentence typo fix to show, chosen with Zenz.
+struct SentenceTypoChoiceToApply {
+  std::string key;
+  std::string value;
+  std::string edit;
+  std::string description;
+};
+
 // Class handling ConverterInterface with a session state.  This class
 // support stateful operations related with the converter.
 class EngineConverterInterface {
@@ -509,6 +527,27 @@ class EngineConverterInterface {
     if (results != nullptr) {
       results->clear();
     }
+  }
+
+  // Keep new virtual functions at the end of this class: the slots of the
+  // existing ones then stay the same.
+  // Mozlumi: the best sentence typo fixes of the last explicit conversion
+  // (at most 4, including Mozc's offers), and the typed reading in
+  // |typed_key|. Empty when the check did not run.
+  virtual std::vector<SentenceTypoFixForZenz> GetSentenceTypoFixesForZenz(
+      std::string* typed_key) const {
+    return {};
+  }
+
+  // Mozlumi: replaces the sentence typo fixes in the candidate list with
+  // |choices| (best first, after the top candidate). Nothing changes after
+  // the user has moved to another candidate or segment. |raw| is the typed
+  // romaji, for learning the typing habits. Returns the number of fixes
+  // shown, or -1 when the list was left as it is.
+  virtual int ReplaceSentenceTypoFixes(
+      absl::Span<const SentenceTypoChoiceToApply> choices,
+      absl::string_view raw) {
+    return -1;
   }
 };
 
