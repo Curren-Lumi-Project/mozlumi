@@ -543,11 +543,11 @@ class EngineConverterInterface {
   // |choices| (best first, after the top candidate). Nothing changes after
   // the user has moved to another candidate or segment. |raw| is the typed
   // romaji, for learning the typing habits. Returns the number of fixes
-  // shown.
-  virtual size_t ReplaceSentenceTypoFixes(
+  // shown, or -1 when the list was left as it is.
+  virtual int ReplaceSentenceTypoFixes(
       absl::Span<const SentenceTypoChoiceToApply> choices,
       absl::string_view raw) {
-    return 0;
+    return -1;
   }
 };
 

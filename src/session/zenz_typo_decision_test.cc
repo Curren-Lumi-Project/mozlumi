@@ -62,6 +62,15 @@ TEST(ZenzTypoDecisionTest, OrdersByGainAndLimitsToThree) {
   EXPECT_EQ(choices[2].key, "a");
 }
 
+TEST(ZenzTypoDecisionTest, Trace) {
+  std::string trace;
+  DecideZenzTypoChoices(true, -30.0,
+                        {Fix("a", true, -20.0), Fix("b", true, -31.0),
+                         Fix("c", false, -10.0), Fix("d", false, -29.0)},
+                        ZenzTypoDecisionOptions(), &trace);
+  EXPECT_EQ(trace, "o1g10.0t1.0:K o1g-1.0t1.0:D o0g20.0t1.0:A o0g1.0t1.0:-");
+}
+
 TEST(ZenzTypoDecisionTest, UnscoredKeepsMozcOffers) {
   // The typed reading was not scored: Mozc's offers as they are.
   std::vector<ZenzTypoChoice> choices = DecideZenzTypoChoices(

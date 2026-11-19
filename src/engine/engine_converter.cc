@@ -1598,22 +1598,22 @@ EngineConverter::GetSentenceTypoFixesForZenz(std::string* typed_key) const {
   return sentence_typo_pool_;
 }
 
-size_t EngineConverter::ReplaceSentenceTypoFixes(
+int EngineConverter::ReplaceSentenceTypoFixes(
     absl::Span<const SentenceTypoChoiceToApply> choices,
     absl::string_view raw) {
   if (!CheckState(CONVERSION) || segments_.conversion_segments_size() == 0 ||
       sentence_typo_pool_.empty()) {
-    return 0;
+    return -1;
   }
   // Do not change the list under the user.
   if (segment_index_ != 0 || candidate_list_.focused_id() != 0 ||
       (!selected_candidate_indices_.empty() &&
        selected_candidate_indices_[0] != 0)) {
-    return 0;
+    return -1;
   }
   Segment* top_segment = segments_.mutable_conversion_segment(0);
   if (top_segment->candidates_size() == 0) {
-    return 0;
+    return -1;
   }
   const uint32_t span = segments_.conversion_segments_size();
 
@@ -1675,7 +1675,7 @@ size_t EngineConverter::ReplaceSentenceTypoFixes(
     }
     ++position;
   }
-  const size_t added = static_cast<size_t>(position - 1);
+  const int added = position - 1;
   typing_correction_offered_ = added > 0;
   UpdateCandidateList();
   candidate_list_.MoveToId(0);

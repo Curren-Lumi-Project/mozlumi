@@ -8014,9 +8014,12 @@ void Session::MaybeScheduleTypoZenz(commands::Command* command) {
   pending_typo_zenz_.fixes = std::move(fixes);
   pending_typo_zenz_.issued_at = request.issued_at;
 
+  const size_t offered = std::count_if(
+      pending_typo_zenz_.fixes.begin(), pending_typo_zenz_.fixes.end(),
+      [](const engine::SentenceTypoFixForZenz& f) { return f.offered; });
   ZenzDebugOutput(absl::StrCat(
       "[typo-zenz] submit generation=", request.generation,
-      " fixes=", pending_typo_zenz_.fixes.size(),
+      " fixes=", pending_typo_zenz_.fixes.size(), " offered=", offered,
       " context_reason=", assembled_context.left.reason));
   EnsureZenzLiveCorrector()->Submit(std::move(request));
   AttachTypoZenzPollCallback(command);
@@ -8094,9 +8097,10 @@ bool Session::ApplyTypoZenz(commands::Command* command) {
     }
     scored.push_back(std::move(s));
   }
+  std::string trace;
   const std::vector<ZenzTypoChoice> choices = DecideZenzTypoChoices(
       results[0].ok, results[0].forced_logprob + results[0].value_logprob,
-      scored);
+      scored, ZenzTypoDecisionOptions(), &trace);
 
   std::vector<engine::SentenceTypoChoiceToApply> to_apply;
   size_t from_zenz = 0;
@@ -8107,13 +8111,18 @@ bool Session::ApplyTypoZenz(commands::Command* command) {
       ++from_zenz;
     }
   }
-  const size_t shown = context_->mutable_converter()->ReplaceSentenceTypoFixes(
+  const int shown = context_->mutable_converter()->ReplaceSentenceTypoFixes(
       to_apply, context_->composer().GetRawString());
   ZenzDebugOutput(absl::StrCat(
       "[typo-zenz] result typed_ok=", ZenzBool(results[0].ok),
       " fixes=", pending.fixes.size(), " choices=", choices.size(),
-      " from_zenz=", from_zenz, " shown=", shown, " debug=",
-      ZenzSafeDebugReason(response->debug)));
+      " from_zenz=", from_zenz,
+      shown < 0 ? " list=unchanged(user moved)"
+                : absl::StrCat(" shown=", shown),
+      " latency_ms=",
+      absl::ToInt64Milliseconds(Clock::GetAbslTime() - pending.issued_at),
+      " debug=", ZenzSafeDebugReason(response->debug), " decision=[", trace,
+      "]"));
   Output(command);
   return true;
 }

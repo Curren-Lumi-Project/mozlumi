@@ -1,6 +1,7 @@
 #include "session/zenz_typo_decision.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -11,12 +12,25 @@ namespace session {
 std::vector<ZenzTypoChoice> DecideZenzTypoChoices(
     bool typed_scored, double typed_logprob,
     const std::vector<ZenzTypoScoredFix>& fixes,
-    const ZenzTypoDecisionOptions& options) {
+    const ZenzTypoDecisionOptions& options, std::string* trace) {
+  auto note = [&](const ZenzTypoScoredFix& fix, double gain, char mark) {
+    if (trace == nullptr) {
+      return;
+    }
+    char item[64];
+    std::snprintf(item, sizeof(item), "%so%dg%.1ft%.1f:%c",
+                  trace->empty() ? "" : " ", fix.offered ? 1 : 0, gain,
+                  fix.typo_cost, mark);
+    trace->append(item);
+  };
   std::vector<ZenzTypoChoice> choices;
   if (!typed_scored) {
     for (const ZenzTypoScoredFix& fix : fixes) {
       if (fix.offered && choices.size() < options.max_choices) {
         choices.push_back({fix.key, fix.mozc_value, fix.edit, false});
+        note(fix, 0.0, 'U');
+      } else {
+        note(fix, 0.0, 'u');
       }
     }
     return choices;
@@ -41,6 +55,7 @@ std::vector<ZenzTypoChoice> DecideZenzTypoChoices(
       if (fix.offered) {
         unscored_offers.push_back({fix.key, fix.mozc_value, fix.edit, false});
       }
+      note(fix, 0.0, fix.offered ? 'U' : 'u');
       continue;
     }
     const double gain = fix.logprob - typed_logprob;
@@ -48,6 +63,9 @@ std::vector<ZenzTypoChoice> DecideZenzTypoChoices(
     if (fix.offered) {
       if (gain > options.keep_margin) {
         ranked.push_back({rank, {fix.key, fix.mozc_value, fix.edit, false}});
+        note(fix, gain, 'K');
+      } else {
+        note(fix, gain, 'D');
       }
       continue;
     }
@@ -56,8 +74,11 @@ std::vector<ZenzTypoChoice> DecideZenzTypoChoices(
           fix.zenz_value.empty() ? fix.mozc_value : fix.zenz_value;
       if (!value.empty()) {
         ranked.push_back({rank, {fix.key, value, fix.edit, true}});
+        note(fix, gain, 'A');
+        continue;
       }
     }
+    note(fix, gain, '-');
   }
   std::stable_sort(ranked.begin(), ranked.end(),
                    [](const Ranked& a, const Ranked& b) {

@@ -194,7 +194,7 @@ class EngineConverter : public EngineConverterInterface {
       absl::string_view description, int position) override;
   std::vector<SentenceTypoFixForZenz> GetSentenceTypoFixesForZenz(
       std::string* typed_key) const override;
-  size_t ReplaceSentenceTypoFixes(
+  int ReplaceSentenceTypoFixes(
       absl::Span<const SentenceTypoChoiceToApply> choices,
       absl::string_view raw) override;
 

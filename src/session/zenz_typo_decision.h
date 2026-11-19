@@ -48,10 +48,16 @@ struct ZenzTypoDecisionOptions {
 
 // Returns the fixes to show, best first. When the typed reading was not
 // scored, Mozc's offers are returned unchanged.
+//
+// When |trace| is given, one item per fix is appended for the debug log
+// (numbers and marks only, never the text): "o<offered>g<gain>t<typo>:<mark>"
+// where the mark is K (kept), D (dropped), A (added), - (not added),
+// U (unscored offer kept) or u (unscored, not offered).
 std::vector<ZenzTypoChoice> DecideZenzTypoChoices(
     bool typed_scored, double typed_logprob,
     const std::vector<ZenzTypoScoredFix>& fixes,
-    const ZenzTypoDecisionOptions& options = ZenzTypoDecisionOptions());
+    const ZenzTypoDecisionOptions& options = ZenzTypoDecisionOptions(),
+    std::string* trace = nullptr);
 
 }  // namespace session
 }  // namespace mozc

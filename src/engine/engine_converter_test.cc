@@ -1273,7 +1273,7 @@ TEST_F(EngineConverterTest, ReplacesSentenceTypoFixesChosenByZenz) {
   }
 
   // Once the user has moved, nothing changes.
-  EXPECT_EQ(converter.ReplaceSentenceTypoFixes({}, "sakanaeotaberu"), 0);
+  EXPECT_EQ(converter.ReplaceSentenceTypoFixes({}, "sakanaeotaberu"), -1);
 }
 
 TEST_F(EngineConverterTest, InsertExternalSegmentCandidates) {
