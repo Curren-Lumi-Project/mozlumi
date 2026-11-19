@@ -52,5 +52,20 @@
     <choice id="blog.curren-lumi.pkg.Mozlumi" visible="false">
         <pkg-ref id="blog.curren-lumi.pkg.Mozlumi"/>
     </choice>
-    <pkg-ref id="blog.curren-lumi.pkg.Mozlumi" onConclusion="None">Mozc.pkg</pkg-ref>
+    <!-- Mozlumi: ask for a logout only on a fresh installation. macOS shows a
+         newly added input method in the input menu only after a logout, even
+         though postinstall has enabled it. Upgrades need no logout. The first
+         answer is kept, because the app exists once the payload is installed. -->
+    <script><![CDATA[
+var mozlumiConclusion = null;
+function mozlumiConclusionAction() {
+  if (mozlumiConclusion === null) {
+    mozlumiConclusion =
+        system.files.fileExistsAtPath('/Library/Input Methods/Mozlumi.app')
+            ? 'None' : 'RequireLogout';
+  }
+  return mozlumiConclusion;
+}
+    ]]></script>
+    <pkg-ref id="blog.curren-lumi.pkg.Mozlumi" onConclusionScript="mozlumiConclusionAction()">Mozc.pkg</pkg-ref>
 </installer-gui-script>
