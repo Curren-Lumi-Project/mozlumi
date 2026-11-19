@@ -7937,9 +7937,10 @@ void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
 void Session::UpdateSelfFixLearning(const commands::Command& command,
                                     ImeContext::State state_before,
                                     const std::string& raw_before) {
+  // Same as the Zenz learning: not in incognito mode, private input or
+  // password fields.
   if (!context_->GetConfig().use_typing_correction() ||
-      context_->composer().GetInputFieldType() ==
-          commands::Context::PASSWORD) {
+      !CanPersistZenzLearningFromInput(*context_)) {
     self_fix_converted_raws_.clear();
     return;
   }

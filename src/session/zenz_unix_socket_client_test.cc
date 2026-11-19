@@ -378,6 +378,31 @@ TEST(ZenzUnixSocketClientTest, TimesOutWhenScorerNeverCreatesSocket) {
   EXPECT_EQ(response.debug, "socket_startup_timeout");
 }
 
+TEST(ZenzUnixSocketClientTest, RefusesSocketInDirectoryWritableByOthers) {
+  ScopedSocketDirectory socket_directory;
+  ASSERT_FALSE(socket_directory.directory().empty());
+  const int server_fd =
+      CreateListeningSocket(socket_directory.socket_path());
+  ASSERT_GE(server_fd, 0);
+  ASSERT_EQ(::chmod(socket_directory.directory().c_str(), 0777), 0);
+
+  std::atomic<int> launch_count = 0;
+  ZenzUnixSocketClient client(
+      socket_directory.socket_path(),
+      [&] {
+        ++launch_count;
+        return true;
+      });
+  const ZenzLiveResponse response =
+      client.Convert(MakeRequest(43, "must not be sent", 200));
+  ::close(server_fd);
+
+  EXPECT_FALSE(response.ok);
+  EXPECT_FALSE(response.timeout);
+  EXPECT_EQ(launch_count.load(), 0);
+  EXPECT_EQ(response.debug, "socket_untrusted_path");
+}
+
 TEST(ZenzUnixSocketClientTest, RejectsInvalidSocketPath) {
   ZenzUnixSocketClient client("");
   EXPECT_FALSE(client.IsAvailable());
