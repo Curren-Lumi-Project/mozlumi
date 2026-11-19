@@ -19,6 +19,8 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 #endif  // !_WIN32
@@ -178,6 +180,51 @@ bool IsColdStartConnectError(int error) {
   return error == ENOENT || error == ECONNREFUSED;
 }
 
+// Mozlumi: the socket directory is under /tmp, where another account could
+// create it first. Nothing is sent unless the directory and the socket belong
+// to this user and the directory is not writable by others. A missing
+// directory or socket is reported as ENOENT, so that the scorer is launched.
+int CheckOwnedSocketPath(const std::string& socket_path) {
+  const size_t slash = socket_path.rfind('/');
+  if (slash == std::string::npos || slash == 0) {
+    return EPERM;
+  }
+  const std::string directory = socket_path.substr(0, slash);
+  struct stat status = {};
+  if (::lstat(directory.c_str(), &status) != 0) {
+    return errno == ENOENT ? ENOENT : EPERM;
+  }
+  if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid() ||
+      (status.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+    return EPERM;
+  }
+  if (::lstat(socket_path.c_str(), &status) != 0) {
+    return errno == ENOENT ? ENOENT : EPERM;
+  }
+  if (!S_ISSOCK(status.st_mode) || status.st_uid != ::geteuid()) {
+    return EPERM;
+  }
+  return 0;
+}
+
+// Mozlumi: the process on the other end must run as this user.
+bool IsPeerSameUser(int fd) {
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+  uid_t uid = 0;
+  gid_t gid = 0;
+  return ::getpeereid(fd, &uid, &gid) == 0 && uid == ::geteuid();
+#elif defined(__linux__)
+  struct ucred credentials = {};
+  socklen_t size = sizeof(credentials);
+  return ::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &size) ==
+             0 &&
+         credentials.uid == ::geteuid();
+#else
+  return true;
+#endif
+}
+
 struct SocketConnectResult {
   int fd = -1;
   int error = 0;
@@ -192,6 +239,14 @@ SocketConnectResult OpenConnectedSocket(const std::string& socket_path,
   if (IsCancelled(cancellation_fd)) {
     result.error = ECANCELED;
     result.debug = "socket_cancelled";
+    return result;
+  }
+
+  const int path_error = CheckOwnedSocketPath(socket_path);
+  if (path_error != 0) {
+    result.error = path_error;
+    result.debug = path_error == ENOENT ? "socket_connect_failed"
+                                        : "socket_untrusted_path";
     return result;
   }
 
@@ -213,6 +268,13 @@ SocketConnectResult OpenConnectedSocket(const std::string& socket_path,
                            &result.error, cancellation_fd)) {
     result.debug = result.timed_out ? "socket_connect_timeout"
                                     : "socket_connect_failed";
+    ::close(fd);
+    return result;
+  }
+
+  if (!IsPeerSameUser(fd)) {
+    result.error = EPERM;
+    result.debug = "socket_untrusted_peer";
     ::close(fd);
     return result;
   }

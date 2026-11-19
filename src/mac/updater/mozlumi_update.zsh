@@ -361,11 +361,32 @@ main() {
   fi
 
   progress_set -1 'インストールしています…（管理者のパスワードを入力してください）'
+  # Any process of this user can change the PKG in WORK_DIR until it is
+  # installed. So, as root, copy it to a folder only root can write, check the
+  # SHA-256 and the package identifier again there, and install that copy.
+  local root_script
+  root_script=$(/bin/cat <<'ROOTSCRIPT'
+set -u
+src=$1
+expected=$2
+id=$3
+d=$(/usr/bin/mktemp -d /private/tmp/mozlumi-install.XXXXXXXX) || exit 70
+trap '/bin/rm -rf "$d"' EXIT
+/bin/cp "$src" "$d/Mozlumi.pkg" || exit 71
+actual=$(/usr/bin/shasum -a 256 "$d/Mozlumi.pkg" | /usr/bin/awk '{ print $1 }')
+[ "$actual" = "$expected" ] || exit 72
+/usr/sbin/pkgutil --expand "$d/Mozlumi.pkg" "$d/expanded" >/dev/null 2>&1 || exit 73
+/usr/bin/grep -q "identifier=\"$id\"" "$d/expanded/Mozc.pkg/PackageInfo" || exit 73
+/usr/sbin/installer -pkg "$d/Mozlumi.pkg" -target /
+ROOTSCRIPT
+)
   local result
-  result=$(/usr/bin/osascript - "${pkg}" <<'APPLESCRIPT' 2>&1
+  result=$(/usr/bin/osascript - "${root_script}" "${pkg}" "${expected}" "${PKG_ID}" <<'APPLESCRIPT' 2>&1
 on run argv
-  do shell script "/usr/sbin/installer -pkg " & quoted form of (item 1 of argv) & ¬
-    " -target /" with prompt "Mozlumi を更新します。" with administrator privileges
+  do shell script "/bin/sh -c " & quoted form of (item 1 of argv) & ¬
+    " mozlumi-install " & quoted form of (item 2 of argv) & " " & ¬
+    quoted form of (item 3 of argv) & " " & quoted form of (item 4 of argv) ¬
+    with prompt "Mozlumi を更新します。" with administrator privileges
 end run
 APPLESCRIPT
 )
@@ -374,6 +395,11 @@ APPLESCRIPT
   if (( install_status != 0 )); then
     # -128: the user canceled the password prompt.
     [[ "${result}" == *'(-128)'* ]] && return 0
+    # 72, 73: the PKG changed between the check and the installation.
+    if [[ "${result}" == *'(72)'* || "${result}" == *'(73)'* ]]; then
+      dialog 'インストールの直前に確かめたところ、更新ファイルが変わっていたため、更新を中止しました。' 'OK' >/dev/null
+      return 1
+    fi
     dialog "更新に失敗しました。
 
 ${result}" 'OK' >/dev/null

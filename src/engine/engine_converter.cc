@@ -1620,7 +1620,10 @@ bool EngineConverter::AddSentenceTypoFixes(const composer::Composer& composer,
 
 void EngineConverter::MaybeLearnTypingCorrection(
     const composer::Composer& composer) {
-  if (!config_->use_typing_correction() ||
+  // Mozlumi: nothing is learned in incognito mode or in password fields.
+  if (!config_->use_typing_correction() || config_->incognito_mode() ||
+      request_->is_incognito_mode() ||
+      composer.GetInputFieldType() == commands::Context::PASSWORD ||
       segments_.conversion_segments_size() == 0) {
     return;
   }
