@@ -1120,7 +1120,7 @@
                    <item>
                     <widget class="QLabel" name="zenzFeedbackLearningSectionLabel">
                      <property name="text">
-                      <string>Zenz 学習（Mozc変換履歴）</string>
+                      <string>Zenz 学習（変換履歴）</string>
                      </property>
                     </widget>
                    </item>
@@ -1629,17 +1629,17 @@
                 <item row="19" column="0" colspan="8">
                  <widget class="QCheckBox" name="zenzDeferLiveConversionDisplayCheckBox">
                   <property name="toolTip">
-                   <string>Zenz 補正が実行される場合、補正結果が確定するまで通常の Mozc ライブ変換結果を表示しません。Zenz が採用されなかった場合は Mozc 結果を表示します。</string>
+                   <string>Zenz 補正が実行される場合、補正結果が確定するまで通常のライブ変換結果を表示しません。Zenz が採用されなかった場合は通常の変換結果を表示します。</string>
                   </property>
                   <property name="text">
-                   <string>Zenz 補正結果が返るまでライブ変換結果（Mozc）を表示しない</string>
+                   <string>Zenz 補正結果が返るまで通常のライブ変換結果を表示しない</string>
                   </property>
                  </widget>
                 </item>
                 <item row="20" column="0" colspan="3">
                  <widget class="QLabel" name="zenzDeferredPresentationTimeoutLabel">
                   <property name="toolTip">
-                   <string>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常の Mozc ライブ変換結果を表示します。</string>
+                   <string>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常のライブ変換結果を表示します。</string>
                   </property>
                   <property name="text">
                    <string>Zenz 補正開始後の最大待機時間</string>
@@ -1649,7 +1649,7 @@
                 <item row="20" column="3" colspan="5">
                  <widget class="QSpinBox" name="zenzDeferredPresentationTimeoutSpinBox">
                   <property name="toolTip">
-                   <string>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常の Mozc ライブ変換結果を表示します。</string>
+                   <string>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常のライブ変換結果を表示します。</string>
                   </property>
                   <property name="minimum">
                    <number>50</number>
@@ -1717,7 +1717,7 @@
                   <item>
                    <widget class="QCheckBox" name="zenzStrictReadingPreservationCheckBox">
                     <property name="toolTip">
-                     <string>Zenz の最終候補を逆変換し、入力した読み全体との一致を検証します。読みが一致しない場合や確認できない場合は、通常の Mozc 変換結果に戻します。正しい候補や保存済みフィードバックによる補正が採用されない場合があり、処理時間が増えることがあります。初期値はオフです。</string>
+                     <string>Zenz の最終候補を逆変換し、入力した読み全体との一致を検証します。読みが一致しない場合や確認できない場合は、通常の変換結果に戻します。正しい候補や保存済みフィードバックによる補正が採用されない場合があり、処理時間が増えることがあります。初期値はオフです。</string>
                     </property>
                     <property name="text">
                      <string>厳密な読み保持（実験的）</string>
@@ -1727,7 +1727,7 @@
                   <item>
                    <widget class="QCheckBox" name="zenzSuppressEmojiChangesCheckBox">
                     <property name="toolTip">
-                     <string>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の Mozc 変換結果を使用します。通常の Mozc の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</string>
+                     <string>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の変換結果を使用します。通常の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</string>
                     </property>
                     <property name="text">
                      <string>Zenz による絵文字変換を抑制する</string>
@@ -1772,13 +1772,13 @@
                 <item row="25" column="3" colspan="5">
                  <widget class="QLineEdit" name="zenzLiveCorrectionTopicLineEdit">
                   <property name="toolTip">
-                   <string>例: Mozc、Rust、会計、法律。空欄なら送信しません。</string>
+                   <string>例: 日本語入力、Rust、会計、法律。空欄なら送信しません。</string>
                   </property>
                   <property name="maxLength">
                    <number>128</number>
                   </property>
                   <property name="placeholderText">
-                   <string>例: Mozc</string>
+                   <string>例: 日本語入力</string>
                   </property>
                  </widget>
                 </item>
@@ -1876,10 +1876,10 @@
                 <item row="31" column="0" colspan="8">
                  <widget class="QCheckBox" name="zenzMozcHistoryLearningCheckBox">
                   <property name="toolTip">
-                   <string>Zenz 補正を明示的に確定した場合、Mozc の通常変換履歴へ追加学習します。Zenz feedback の記録設定とは独立しています。Mozc 履歴学習が読み取り専用・無効の場合や、シークレット・保護入力では書き込みません。</string>
+                   <string>Zenz 補正を明示的に確定した場合、通常の変換履歴へ追加学習します。Zenz feedback の記録設定とは独立しています。通常の変換履歴の学習が読み取り専用・無効の場合や、シークレット・保護入力では書き込みません。</string>
                   </property>
                   <property name="text">
-                   <string>確定した Zenz 補正を Mozc の変換履歴に追加学習する</string>
+                   <string>確定した Zenz 補正を 通常の変換履歴に追加学習する</string>
                   </property>
                  </widget>
                 </item>
@@ -1894,7 +1894,7 @@
                    <item>
                     <widget class="QLabel" name="zenzFeedbackLearningSubsectionLabel">
                      <property name="text"><string>Zenz 学習（補正フィードバック）</string></property>
-                     <property name="toolTip"><string>Zenz 補正の採用・却下を記録し、保存済みの評価を候補順位や自動ブロックの判定に利用します。Mozc の通常変換履歴とは別に管理されます。</string></property>
+                     <property name="toolTip"><string>Zenz 補正の採用・却下を記録し、保存済みの評価を候補順位や自動ブロックの判定に利用します。通常の変換履歴とは別に管理されます。</string></property>
                     </widget>
                    </item>
                    <item>
@@ -1913,7 +1913,7 @@
                 <item row="33" column="0" colspan="8">
                  <widget class="QCheckBox" name="zenzFeedbackRecordingCheckBox">
                   <property name="toolTip">
-                   <string>Zenz 補正の採用・却下をローカルの feedback データに記録します。保存済みデータを変換へ自動適用するかどうか、および Mozc 履歴へ追加学習するかどうかとは独立しています。</string>
+                   <string>Zenz 補正の採用・却下をローカルの feedback データに記録します。保存済みデータを変換へ自動適用するかどうか、および 通常の変換履歴へ追加学習するかどうかとは独立しています。</string>
                   </property>
                   <property name="text">
                    <string>Zenz 補正の採用・却下を記録する</string>
@@ -1933,7 +1933,7 @@
                 <item row="35" column="0" colspan="8">
                  <widget class="QCheckBox" name="zenzFeedbackAutoBlockCheckBox">
                   <property name="toolTip">
-                   <string>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の Mozc 候補から削除する機能ではありません。</string>
+                   <string>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の候補から削除する機能ではありません。</string>
                   </property>
                   <property name="text">
                    <string>Zenz 補正と異なる結果で確定した場合、その補正を自動ブロックする</string>
@@ -2033,7 +2033,7 @@
                 <item row="40" column="3" colspan="5">
                  <widget class="QPushButton" name="editZenzFeedbackButton">
                   <property name="toolTip">
-                   <string>Zenz 補正の採用・却下・手動ブロックの履歴を確認、検索、インポート、エクスポート、削除します。Mozc の通常変換履歴に追加学習した内容は管理対象外です。</string>
+                   <string>Zenz 補正の採用・却下・手動ブロックの履歴を確認、検索、インポート、エクスポート、削除します。通常の変換履歴に追加学習した内容は管理対象外です。</string>
                   </property>
                   <property name="text">
                    <string>管理...</string>

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>Japanese</string>
 	<key>CFBundleDisplayName</key>
-	<string>${BRANDING}Converter</string>
+	<string>Mozlumi Converter</string>
 	<key>CFBundleExecutable</key>
 	<string>${EXECUTABLE_NAME}</string>
 	<key>CFBundleIconFile</key>

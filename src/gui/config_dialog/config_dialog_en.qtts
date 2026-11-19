@@ -10,7 +10,7 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の Mozc 変換結果を使用します。通常の Mozc の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</source>
+        <source>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の変換結果を使用します。通常の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</source>
         <translation>Zenz may generate emoji based on the typed reading or context. When enabled, Zenz conversion results that add, change, or remove emoji are rejected in favor of the normal Mozc conversion result. Ordinary Mozc emoji candidates remain available for display and manual selection. Enabled by default.</translation>
     </message>
     <message>
@@ -567,12 +567,12 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>Zenz 補正結果が返るまでライブ変換結果（Mozc）を表示しない</source>
+        <source>Zenz 補正結果が返るまで通常のライブ変換結果を表示しない</source>
         <translation>Hide the Mozc live-conversion result until Zenz correction finishes</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>Zenz 補正が実行される場合、補正結果が確定するまで通常の Mozc ライブ変換結果を表示しません。Zenz が採用されなかった場合は Mozc 結果を表示します。</source>
+        <source>Zenz 補正が実行される場合、補正結果が確定するまで通常のライブ変換結果を表示しません。Zenz が採用されなかった場合は通常の変換結果を表示します。</source>
         <translation>When Zenz correction runs, keep the previous preedit visible until the correction finishes. If Zenz is not adopted, show the Mozc result.</translation>
     </message>
     <message>
@@ -582,7 +582,7 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常の Mozc ライブ変換結果を表示します。</source>
+        <source>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常のライブ変換結果を表示します。</source>
         <translation>When deferred presentation is enabled, if no Zenz result is available within this time after the correction request is submitted, cancel Zenz for that input and show the normal Mozc live-conversion result.</translation>
     </message>
     <message>
@@ -632,12 +632,12 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc、Rust、会計、法律。空欄なら送信しません。</source>
+        <source>例: 日本語入力、Rust、会計、法律。空欄なら送信しません。</source>
         <translation>Example: Mozc, Rust, accounting, law. Empty values are not sent.</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc</source>
+        <source>例: 日本語入力</source>
         <translation>Example: Mozc</translation>
     </message>
     <message>
@@ -722,7 +722,7 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の Mozc 候補から削除する機能ではありません。</source>
+        <source>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の候補から削除する機能ではありません。</source>
         <translation>For the same reading, context class, and Zenz correction, suppress display when both the reject count and reject percentage meet or exceed the configured thresholds. While auto-blocked, Zenz continues generating corrections internally and compares them with the final committed text; if matching observations increase and the reject percentage falls, the block is removed automatically. This does not remove candidates from normal Mozc conversion.</translation>
     </message>
     <message>

@@ -2095,7 +2095,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
       QString::fromUtf8(
           "Zenz 補正の採用・却下・手動ブロックの記録を管理します。"
           "記録は次回以降の候補順位や自動ブロックの判定に使われます。"
-          "Mozc の通常変換履歴とは別に保存されています。"),
+          "通常の変換履歴とは別に保存されています。"),
       &dialog);
   description_label->setWordWrap(true);
 
@@ -2135,7 +2135,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
                              "また、表示された Zenz 補正を通常変換へ戻した後、または"
                              "自動ブロック中の hidden Zenz 補正に対して、同じ読み全体を"
                              "最終的に同じ値で確定した場合も採用として記録されます。"
-                             "hidden match は Zenz feedback の統計だけを更新し、通常 Mozc "
+                             "hidden match は Zenz feedback の統計だけを更新し、通常の変換"
                              "履歴への追加学習は行いません。\n\n"
                              "【いつ却下として記録されるか】\n"
                              "Zenz 補正が表示された後に Space や候補移動などで"
@@ -2151,7 +2151,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
                              "選択、通常変換の確定は、この画面のフィードバック学習スコアには"
                              "影響しません。hidden Zenz の読みより入力が伸びた場合も、"
                              "別の full-sequence として扱い、その古い観測は数えません。"
-                             "また、Zenz が通常 Mozc と同じ値を返した場合、"
+                             "また、Zenz が通常の変換と同じ値を返した場合、"
                              "出力検証や採用ポリシーで不採用になった場合、"
                              "password / privacy gate で止められた場合も、"
                              "表示済み Zenz 補正としては扱われません。\n\n"
@@ -2166,7 +2166,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
                              "この場合、auto-block が OFF でも、Zenz feedback による"
                              "優先候補や保存済み feedback による即時補正としては使いません。"
                              "ただし hard block ではないため、Zenz が新しく同じ補正を"
-                             "返すこと自体や、通常 Mozc 候補を消すことはありません。\n"
+                             "返すこと自体や、通常の候補を消すことはありません。\n"
                              "自動ブロック中: auto-block が ON で、同じ exact 文脈クラスの"
                              "通常却下回数が最低拒否回数以上、かつ拒否割合が最低拒否割合以上"
                              "です。拒否割合は 通常却下 / (採用 + 通常却下) で計算します。"
@@ -2184,7 +2184,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
                              "対象外かどうかは現在の設定から動的に決まります。\n\n"
                              "【通常の変換履歴との違い】\n"
                              "Zenz の結果を確定した場合、条件によっては通常の変換履歴にも"
-                             "反映されます。また、安全に判断できる場合は、直前の通常 Mozc "
+                             "反映されます。また、安全に判断できる場合は、直前の通常の"
                              "ライブ変換文節列へ逆投影し、文節列全体を通常変換履歴に近い形で"
                              "反映します。このとき、Zenz が実際に直した文節だけを"
                              "強い選択履歴として扱います。\n\n"
@@ -2621,7 +2621,7 @@ void ShowZenzFeedbackManagementDialog(QWidget* parent,
                      message_box.setInformativeText(
                          QString::fromUtf8(
                              "この操作は元に戻せません。\n"
-                             "Mozc の通常変換履歴に追加学習した内容は削除されません。"));
+                             "通常の変換履歴に追加学習した内容は削除されません。"));
 
                      QPushButton* clear_confirm_button =
                          message_box.addButton(QString::fromUtf8("すべて削除"),

@@ -10,8 +10,8 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の Mozc 変換結果を使用します。通常の Mozc の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</source>
-        <translation>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の Mozc 変換結果を使用します。通常の Mozc の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</translation>
+        <source>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の変換結果を使用します。通常の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</source>
+        <translation>Zenz は入力した読みや文脈に応じて絵文字を生成することがあります。有効にすると、絵文字の追加・変更・削除を伴う Zenz の変換結果を採用せず、通常の変換結果を使用します。通常の絵文字候補の表示や手動選択には影響しません。初期値はオンです。</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
@@ -567,13 +567,13 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>Zenz 補正結果が返るまでライブ変換結果（Mozc）を表示しない</source>
-        <translation>Zenz 補正結果が返るまでライブ変換結果（Mozc）を表示しない</translation>
+        <source>Zenz 補正結果が返るまで通常のライブ変換結果を表示しない</source>
+        <translation>Zenz 補正結果が返るまで通常のライブ変換結果を表示しない</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>Zenz 補正が実行される場合、補正結果が確定するまで通常の Mozc ライブ変換結果を表示しません。Zenz が採用されなかった場合は Mozc 結果を表示します。</source>
-        <translation>Zenz 補正が実行される場合、補正結果が確定するまで通常の Mozc ライブ変換結果を表示しません。Zenz が採用されなかった場合は Mozc 結果を表示します。</translation>
+        <source>Zenz 補正が実行される場合、補正結果が確定するまで通常のライブ変換結果を表示しません。Zenz が採用されなかった場合は通常の変換結果を表示します。</source>
+        <translation>Zenz 補正が実行される場合、補正結果が確定するまで通常のライブ変換結果を表示しません。Zenz が採用されなかった場合は通常の変換結果を表示します。</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
@@ -582,8 +582,8 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常の Mozc ライブ変換結果を表示します。</source>
-        <translation>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常の Mozc ライブ変換結果を表示します。</translation>
+        <source>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常のライブ変換結果を表示します。</source>
+        <translation>「通常のライブ変換結果を表示しない」が有効な場合、Zenz 補正要求の送信後、この時間以内に結果が返らなければ、その回の Zenz 補正を中止して通常のライブ変換結果を表示します。</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
@@ -632,13 +632,13 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc、Rust、会計、法律。空欄なら送信しません。</source>
-        <translation>例: Mozc、Rust、会計、法律。空欄なら送信しません。</translation>
+        <source>例: 日本語入力、Rust、会計、法律。空欄なら送信しません。</source>
+        <translation>例: 日本語入力、Rust、会計、法律。空欄なら送信しません。</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>例: Mozc</source>
-        <translation>例: Mozc</translation>
+        <source>例: 日本語入力</source>
+        <translation>例: 日本語入力</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
@@ -722,8 +722,8 @@
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
-        <source>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の Mozc 候補から削除する機能ではありません。</source>
-        <translation>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の Mozc 候補から削除する機能ではありません。</translation>
+        <source>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の候補から削除する機能ではありません。</source>
+        <translation>同じ読み・同じ文脈クラス・同じ Zenz 補正について、拒否回数と拒否割合の両方が設定値以上になった場合に表示を抑制します。自動ブロック中も Zenz の内部生成と最終確定との比較を続け、一致が増えて拒否割合が下がれば自動解除します。通常の候補から削除する機能ではありません。</translation>
     </message>
     <message>
         <location filename="config_dialog.ui" line="0"/>
@@ -1133,7 +1133,7 @@
     <message>
         <location filename="config_dialog.cc" line="718"/>
         <source>This operation clears Mozc conversion learning, including learning reflected from accepted Zenz results. Input history data and Zenz learning data itself are not cleared. To remove input history data, use &quot;Suggestion&quot; -&gt; &quot;Clear all history&quot;. To manage Zenz learning data, use &quot;Advanced&quot; -&gt; &quot;Zenz Learning&quot;. Do you want to continue?</source>
-        <translation>Mozcの変換学習がリセットされます。Zenzの結果からMozcに反映された変換学習も対象です。入力履歴データとZenz学習データそのものはリセットされません。入力履歴データの削除は「サジェスト→全入力履歴を削除」、Zenz学習データの管理は「入力補助→Zenz 学習」から行えます。実行しますか？</translation>
+        <translation>通常の変換の学習がリセットされます。Zenzの結果から反映された変換学習も対象です。入力履歴データとZenz学習データそのものはリセットされません。入力履歴データの削除は「サジェスト→全入力履歴を削除」、Zenz学習データの管理は「入力補助→Zenz 学習」から行えます。実行しますか？</translation>
     </message>
     <message>
         <location filename="config_dialog.cc" line="776"/>

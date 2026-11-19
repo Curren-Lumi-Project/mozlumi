@@ -269,7 +269,7 @@
     </message>
     <message>
         <source>RevertZenzToMozc</source>
-        <translation>通常のMozc変換に戻す</translation>
+        <translation>通常の変換に戻す</translation>
     </message>
     <message>
         <source>BlockVisibleZenzCorrection</source>
@@ -277,11 +277,11 @@
     </message>
     <message>
         <source>Return to Mozc conversion must be used alone.</source>
-        <translation>通常のMozc変換に戻す操作は単独で指定してください。</translation>
+        <translation>通常の変換に戻す操作は単独で指定してください。</translation>
     </message>
     <message>
         <source>Return to Mozc conversion or blocking Zenz must be used alone.</source>
-        <translation>通常のMozc変換への復帰とZenzブロックは単独で指定してください。</translation>
+        <translation>通常の変換への復帰とZenzブロックは単独で指定してください。</translation>
     </message>
     <message>
         <source>ForceZenzLiveCorrection</source>

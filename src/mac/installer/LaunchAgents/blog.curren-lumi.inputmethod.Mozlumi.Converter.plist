@@ -4,6 +4,10 @@
 <dict>
 	<key>Program</key>
 	<string>/Library/Input Methods/Mozlumi.app/Contents/Resources/MozcConverter.app/Contents/MacOS/MozcConverter</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>blog.curren-lumi.inputmethod.Mozlumi</string>
+	</array>
 	<key>Label</key>
 	<string>blog.curren-lumi.inputmethod.Mozlumi.Converter</string>
 	<key>MachServices</key>
