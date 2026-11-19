@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
@@ -292,7 +293,8 @@ class UserHistoryPredictor : public PredictorInterface {
     static constexpr size_t kEntryPoolSize = 16;
     Agenda agenda_;
     Arena<Entry> pool_;
-    absl::flat_hash_set<size_t> seen_;
+    // Hash of the value -> the entry pushed first with that value.
+    absl::flat_hash_map<size_t, Entry*> seen_;
     absl::flat_hash_map<absl::string_view, std::pair<int, int>>
         partial_entry_count_;
   };

@@ -346,7 +346,16 @@ bool UserHistoryPredictor::IsPrivacySensitive(
 
 bool UserHistoryPredictor::EntryPriorityQueue::Push(Entry* absl_nonnull entry) {
   DCHECK(entry);
-  if (!seen_.insert(absl::HashOf(entry->value())).second) {
+  const auto [it, inserted] =
+      seen_.try_emplace(absl::HashOf(entry->value()), entry);
+  if (!inserted) {
+    // Mozlumi: the same value may be pushed first as a joined result
+    // (「今日は」+「いいね」) and then as the learned sentence itself. Keep the
+    // first entry but let it carry the learned-sentence mark.
+    if (entry->attributes() & Attribute::LEARNED_SENTENCE) {
+      it->second->set_attributes(it->second->attributes() |
+                                 Attribute::LEARNED_SENTENCE);
+    }
     MOZC_VLOG(2) << "found dups";
     return false;
   }
