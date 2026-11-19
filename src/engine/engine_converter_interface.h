@@ -351,25 +351,6 @@ class EngineConverterInterface {
     return 0;
   }
 
-  // Mozlumi: the best sentence typo fixes of the last explicit conversion
-  // (at most 4, including Mozc's offers), and the typed reading in
-  // |typed_key|. Empty when the check did not run.
-  virtual std::vector<SentenceTypoFixForZenz> GetSentenceTypoFixesForZenz(
-      std::string* typed_key) const {
-    return {};
-  }
-
-  // Mozlumi: replaces the sentence typo fixes in the candidate list with
-  // |choices| (best first, after the top candidate). Nothing changes after
-  // the user has moved to another candidate or segment. |raw| is the typed
-  // romaji, for learning the typing habits. Returns the number of fixes
-  // shown.
-  virtual size_t ReplaceSentenceTypoFixes(
-      absl::Span<const SentenceTypoChoiceToApply> choices,
-      absl::string_view raw) {
-    return 0;
-  }
-
   // Fix the suggestion candidate.  True is returned if the selected
   // candidate is successfully committed.
   virtual bool CommitSuggestionByIndex(size_t index,
@@ -546,6 +527,27 @@ class EngineConverterInterface {
     if (results != nullptr) {
       results->clear();
     }
+  }
+
+  // Keep new virtual functions at the end of this class: the slots of the
+  // existing ones then stay the same.
+  // Mozlumi: the best sentence typo fixes of the last explicit conversion
+  // (at most 4, including Mozc's offers), and the typed reading in
+  // |typed_key|. Empty when the check did not run.
+  virtual std::vector<SentenceTypoFixForZenz> GetSentenceTypoFixesForZenz(
+      std::string* typed_key) const {
+    return {};
+  }
+
+  // Mozlumi: replaces the sentence typo fixes in the candidate list with
+  // |choices| (best first, after the top candidate). Nothing changes after
+  // the user has moved to another candidate or segment. |raw| is the typed
+  // romaji, for learning the typing habits. Returns the number of fixes
+  // shown.
+  virtual size_t ReplaceSentenceTypoFixes(
+      absl::Span<const SentenceTypoChoiceToApply> choices,
+      absl::string_view raw) {
+    return 0;
   }
 };
 
