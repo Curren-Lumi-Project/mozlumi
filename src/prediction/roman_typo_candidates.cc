@@ -96,6 +96,11 @@ constexpr float kTranspositionCost = 0.8f;
 constexpr float kDoubledKeyDeletionCost = 0.7f;
 constexpr float kDeletionCost = 1.0f;
 constexpr float kInsertionCost = 1.2f;
+// A long vowel spelled as it sounds: "oo" for "ou" ("syooryuuken" ->
+// "syouryuuken", 昇竜拳), "ee" for "ei" ("eega" -> "eiga", 映画), and the
+// other way around ("toui" -> "tooi", 遠い). Not a key slip, so the keys
+// need not be neighbors.
+constexpr float kLongVowelSpellingCost = 0.8f;
 constexpr float kRareInsertionCost = 1.3f;
 // Typos on the first key are less likely (and more confusing when
 // corrected).
@@ -162,6 +167,27 @@ std::vector<RomanTypoCandidate> GenerateImpl(std::string_view raw,
           RomanTypoCandidate::SUBSTITUTION, i,
           std::string("s:") + n + base[i]);
     }
+  }
+
+  // Long vowel spelling ("oo" <-> "ou", "ee" <-> "ei").
+  for (size_t i = 1; i < base.size(); ++i) {
+    char alt = 0;
+    if (base[i - 1] == 'o' && base[i] == 'o') {
+      alt = 'u';
+    } else if (base[i - 1] == 'o' && base[i] == 'u') {
+      alt = 'o';
+    } else if (base[i - 1] == 'e' && base[i] == 'e') {
+      alt = 'i';
+    } else if (base[i - 1] == 'e' && base[i] == 'i') {
+      alt = 'e';
+    }
+    if (alt == 0) {
+      continue;
+    }
+    std::string s = base;
+    s[i] = alt;
+    add(std::move(s), kLongVowelSpellingCost, RomanTypoCandidate::SUBSTITUTION,
+        i, std::string("s:") + alt + base[i]);
   }
 
   // Transposition of two adjacent keys.
