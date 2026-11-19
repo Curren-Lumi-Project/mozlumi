@@ -57,6 +57,13 @@ namespace {
 
 constexpr int64_t kAsciiBadness = 100000;
 
+// The edits made by the long vowel spelling fixes of
+// prediction::GenerateRomanTypoCandidates ("s:" + new + old). None of them is
+// a QWERTY neighbor substitution.
+bool IsLongVowelSpellingEdit(absl::string_view edit) {
+  return edit == "s:uo" || edit == "s:ou" || edit == "s:ie" || edit == "s:ei";
+}
+
 bool ContainsLatin(absl::string_view s) {
   const std::string half = japanese::FullWidthAsciiToHalfWidthAscii(s);
   return std::any_of(half.begin(), half.end(), [](char c) {
@@ -222,7 +229,22 @@ SentenceTypoAnalysis AnalyzeOneEdit(
                      return a.typo.cost < b.typo.cost;
                    });
   if (pending.size() > options.max_conversions) {
+    // Mozlumi: a long vowel spelled as it sounds ("oo" for "ou", "ee" for
+    // "ei") is often in a segment that does not look the most suspicious
+    // ("syooryuuken": 初お + リュウケン), so its fix fell outside the limit.
+    // There are only a few such fixes; convert them as well.
+    constexpr size_t kMaxExtraLongVowelFixes = 4;
+    std::vector<Pending> extra;
+    for (size_t i = options.max_conversions;
+         i < pending.size() && extra.size() < kMaxExtraLongVowelFixes; ++i) {
+      if (IsLongVowelSpellingEdit(pending[i].typo.edit)) {
+        extra.push_back(std::move(pending[i]));
+      }
+    }
     pending.resize(options.max_conversions);
+    for (Pending& p : extra) {
+      pending.push_back(std::move(p));
+    }
   }
 
   for (const Pending& p : pending) {
