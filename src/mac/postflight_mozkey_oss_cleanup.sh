@@ -144,7 +144,8 @@ fi
 # On a fresh installation (marked by preinstall), macOS may still remember the
 # input source as enabled from an earlier installation, yet not show it in the
 # input menu until it is removed and added again. --reactivate_input_source
-# does that.
+# does that. The executable writes "Mozlumi register:" lines for each step;
+# they go to the installer log (/var/log/install.log).
 # An unavailable desktop session must not fail the package installation.
 _mozkey_console_user=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null) || _mozkey_console_user=''
 _mozkey_console_uid=''
@@ -161,6 +162,6 @@ if [ -n "$_mozkey_console_uid" ]; then
   fi
   /bin/launchctl asuser "$_mozkey_console_uid" /usr/bin/sudo -u "$_mozkey_console_user" \
     "$_mozkey_app/Contents/MacOS/Mozlumi" --register_input_source $_mozkey_reactivate \
-    >/dev/null 2>&1 || true
+    2>&1 | /usr/bin/grep '^Mozlumi register: ' || true
 fi
 exit 0
