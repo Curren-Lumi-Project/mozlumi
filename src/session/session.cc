@@ -2310,6 +2310,8 @@ bool Session::SendCommand(commands::Command* command) {
     ClearZenzLiveCorrectionState();
   }
 
+  UpdateRecentCommitContext(*command, context_->state(),
+                            /*from_send_key=*/false);
   MaybeSetUndoStatus(command);
   return result;
 }
@@ -2435,6 +2437,7 @@ bool Session::TestSendKey(commands::Command* command) {
 }
 
 bool Session::SendKey(commands::Command* command) {
+  const ImeContext::State recent_commit_state_before = context_->state();
   // A new physical key always invalidates a suspended macro, including a
   // reconversion continuation that has not reached the TSF callback yet.
   ++command_sequence_generation_;
@@ -2480,6 +2483,8 @@ bool Session::SendKey(commands::Command* command) {
     ClearZenzLiveCorrectionState();
   }
 
+  UpdateRecentCommitContext(*command, recent_commit_state_before,
+                            /*from_send_key=*/true);
   MaybeSetUndoStatus(command);
   return result;
 }
@@ -6983,7 +6988,7 @@ bool Session::MaybeApplyZenzFeedbackLiveCorrection(
       GetZenzLiveCorrectionLeftContextLength(config);
 
   const ZenzClientContextView zenz_client_context =
-      GetZenzClientContextView(context_->client_context());
+      GetZenzContextView();
   ZenzContextAssemblyInput context_input;
   context_input.preceding_text = zenz_client_context.preceding_text;
   context_input.left_max_chars = left_context_len;
@@ -7332,8 +7337,9 @@ bool Session::MaybeScheduleZenzLiveCorrection(
   const uint32_t right_context_len =
       GetZenzLiveCorrectionRightContextLength(config);
 
+  bool zenz_context_from_recent_commit = false;
   const ZenzClientContextView zenz_client_context =
-      GetZenzClientContextView(context_->client_context());
+      GetZenzContextView(&zenz_context_from_recent_commit);
   ZenzContextAssemblyInput context_input;
   context_input.preceding_text = zenz_client_context.preceding_text;
   context_input.following_text = zenz_client_context.following_text;
@@ -7403,6 +7409,7 @@ bool Session::MaybeScheduleZenzLiveCorrection(
       " context_allowed=",
       ZenzBool(assembled_context.left.allowed_for_prompt),
       " context_reason=", assembled_context.left.reason,
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app"),
       " right_context_allowed=",
       ZenzBool(assembled_context.right.allowed_for_prompt),
       " right_context_reason=", assembled_context.right.reason,
@@ -7713,8 +7720,9 @@ void Session::MaybeScheduleAiCandidates(commands::Command* command) {
     return;
   }
 
+  bool zenz_context_from_recent_commit = false;
   const ZenzClientContextView zenz_client_context =
-      GetZenzClientContextView(context_->client_context());
+      GetZenzContextView(&zenz_context_from_recent_commit);
   ZenzContextAssemblyInput context_input;
   context_input.preceding_text = zenz_client_context.preceding_text;
   context_input.following_text = zenz_client_context.following_text;
@@ -7759,7 +7767,8 @@ void Session::MaybeScheduleAiCandidates(commands::Command* command) {
       ZenzRedactedTextStats("key", key), " ",
       ZenzRedactedTextStats("mozc_value", mozc_value),
       " segments=", pending_ai_candidates_.baseline_segments.size(),
-      " context_reason=", assembled_context.left.reason));
+      " context_reason=", assembled_context.left.reason,
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app")));
 
   EnsureZenzLiveCorrector()->Submit(std::move(request));
   AttachAiCandidatesPollCallback(command);
@@ -7918,6 +7927,93 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
 
 void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
 
+ZenzClientContextView Session::GetZenzContextView(
+    bool* from_recent_commit) const {
+  if (from_recent_commit != nullptr) {
+    *from_recent_commit = false;
+  }
+  const commands::Context& client_context = context_->client_context();
+  ZenzClientContextView view = GetZenzClientContextView(client_context);
+  // Any preceding text field (even an empty one) means the application
+  // answered; then its answer is used as it is.
+  if (client_context.has_preceding_text() ||
+      client_context.has_zenz_preceding_text() ||
+      context_->composer().GetInputFieldType() ==
+          commands::Context::PASSWORD) {
+    return view;
+  }
+  const absl::string_view recent =
+      recent_commit_context_.Get(Clock::GetAbslTime());
+  if (recent.empty()) {
+    return view;
+  }
+  view.preceding_text = recent;
+  if (from_recent_commit != nullptr) {
+    *from_recent_commit = true;
+  }
+  return view;
+}
+
+void Session::UpdateRecentCommitContext(const commands::Command& command,
+                                        ImeContext::State state_before,
+                                        bool from_send_key) {
+  if (context_->composer().GetInputFieldType() ==
+      commands::Context::PASSWORD) {
+    recent_commit_context_.Clear();
+    return;
+  }
+  const absl::Time now = Clock::GetAbslTime();
+  const commands::Output& output = command.output();
+  if (output.has_result() && !output.result().value().empty()) {
+    recent_commit_context_.OnCommit(output.result().value(), now);
+  }
+
+  // Below: a key that went to the application as it is.
+  if (!from_send_key || output.consumed() || !command.input().has_key() ||
+      (state_before != ImeContext::PRECOMPOSITION &&
+       state_before != ImeContext::DIRECT)) {
+    return;
+  }
+  const commands::KeyEvent& key = command.input().key();
+  for (const int modifier : key.modifier_keys()) {
+    if (modifier != commands::KeyEvent::SHIFT &&
+        modifier != commands::KeyEvent::LEFT_SHIFT &&
+        modifier != commands::KeyEvent::RIGHT_SHIFT &&
+        modifier != commands::KeyEvent::CAPS) {
+      // A shortcut may change the text in unknown ways.
+      recent_commit_context_.Clear();
+      return;
+    }
+  }
+  if (!key.has_special_key()) {
+    if (key.has_key_code() && key.key_code() >= 0x20 &&
+        key.key_code() < 0x7f) {
+      // A character typed directly (for example, in alphanumeric mode).
+      recent_commit_context_.OnCommit(
+          std::string(1, static_cast<char>(key.key_code())), now);
+    }
+    return;
+  }
+  switch (key.special_key()) {
+    case commands::KeyEvent::ENTER:
+      recent_commit_context_.OnLineBreak(now);
+      break;
+    case commands::KeyEvent::BACKSPACE:
+      recent_commit_context_.OnBackspace(now);
+      break;
+    case commands::KeyEvent::SPACE:
+      recent_commit_context_.OnCommit(" ", now);
+      break;
+    case commands::KeyEvent::ESCAPE:
+      break;
+    default:
+      // Cursor movement, Delete, Tab and others: the text before the
+      // cursor is no longer known.
+      recent_commit_context_.Clear();
+      break;
+  }
+}
+
 void Session::AttachTypoZenzPollCallback(commands::Command* command) const {
   commands::Output::Callback* callback =
       command->mutable_output()->mutable_callback();
@@ -7960,8 +8056,9 @@ void Session::MaybeScheduleTypoZenz(commands::Command* command) {
     return;
   }
 
+  bool zenz_context_from_recent_commit = false;
   const ZenzClientContextView zenz_client_context =
-      GetZenzClientContextView(context_->client_context());
+      GetZenzContextView(&zenz_context_from_recent_commit);
   ZenzContextAssemblyInput context_input;
   context_input.preceding_text = zenz_client_context.preceding_text;
   context_input.following_text = zenz_client_context.following_text;
@@ -8020,7 +8117,8 @@ void Session::MaybeScheduleTypoZenz(commands::Command* command) {
   ZenzDebugOutput(absl::StrCat(
       "[typo-zenz] submit generation=", request.generation,
       " fixes=", pending_typo_zenz_.fixes.size(), " offered=", offered,
-      " context_reason=", assembled_context.left.reason));
+      " context_reason=", assembled_context.left.reason,
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app")));
   EnsureZenzLiveCorrector()->Submit(std::move(request));
   AttachTypoZenzPollCallback(command);
 }

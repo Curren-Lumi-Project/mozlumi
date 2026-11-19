@@ -172,6 +172,28 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "zenz_recent_commit_context",
+    srcs = ["zenz_recent_commit_context.cc"],
+    hdrs = ["zenz_recent_commit_context.h"],
+    deps = [
+        "//base:util",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_test(
+    name = "zenz_recent_commit_context_test",
+    size = "small",
+    srcs = ["zenz_recent_commit_context_test.cc"],
+    deps = [
+        ":zenz_recent_commit_context",
+        "//testing:gunit_main",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_library(
     name = "zenz_client_context",
     srcs = ["zenz_client_context.cc"],
     hdrs = ["zenz_client_context.h"],
@@ -239,6 +261,7 @@ mozc_cc_library(
         ":zenz_client_context",
         ":zenz_context_assembler",
         ":zenz_context_sanitizer",
+        ":zenz_recent_commit_context",
         ":zenz_feedback_store",
         ":zenz_output_validator",
         ":zenz_prompt_builder",
