@@ -54,8 +54,13 @@ pkg_zip(
 pkg_zip(
     name = "resources",
     srcs = [
+        "Resources/background.png",
         "Resources/en.lproj/Localizable.strings",
+        "Resources/en.lproj/conclusion.html",
+        "Resources/en.lproj/welcome.html",
         "Resources/ja.lproj/Localizable.strings",
+        "Resources/ja.lproj/conclusion.html",
+        "Resources/ja.lproj/welcome.html",
     ],
     out = "resources.zip",
     strip_prefix = ".",
