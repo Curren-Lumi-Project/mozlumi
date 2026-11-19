@@ -34,8 +34,9 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 | `kqisya` | 会社、記者 |
 | `denhsa` | 電車 |
 | `gakkkou` | 学校 |
+| `syooryuuken` | 昇竜拳（長音を「oo」と打った） |
 
-- 対象とする打ち間違い: 隣のキーを押した、隣り合う 2 キーが入れ替わった、余分に押した（二度押しを含む）、1 文字抜けた
+- 対象とする打ち間違い: 隣のキーを押した、隣り合う 2 キーが入れ替わった、余分に押した（二度押しを含む）、1 文字抜けた、長音を聞こえたとおりに打った（「ou」を「oo」、「ei」を「ee」、またはその逆）
 - 補正候補は辞書に実在する読みだけで、最大 3 件です。打ち間違いの起こりやすさと語の使用頻度で並べ、通常の候補より順位を下げて表示します
 - 打った読みがそのまま辞書にある場合や、よく使う語の書きかけと判断した場合は補正しません
 - 動作するのは、ローマ字入力・ひらがなモードです。打っている途中のサジェストと予測候補（Tab）に出ます
@@ -44,6 +45,9 @@ Mozkey の機能を引き継いでいますが、次の点が異なります。M
 - 入力の最後に、かなにならないローマ字が 2 文字以上残ったとき（例: `yokuyary` →「よくやry」）は、そこだけを直した変換を 1 番目にします（打ったままの文字は 2 番目）
 - 予測候補（Tab）と Space 変換では、8 文字以上の入力で 1 文字の補正が見つからないとき、2 か所までの打ち間違いも探します（打っている途中のサジェストでは探しません）
 - 補正候補を選んで確定すると、その打ち間違いの種類（例: a のつもりで q を押した）を覚え、次から同じ間違い方の補正を上位に出します。覚えるのは間違い方の種類と回数だけで、打った文章は保存しません
+- Space で変換したあと、確定する前に 1〜2 キーだけ打ち直して確定すると、その直し方を覚えます（例: `issunn` で「一寸」が出たので `issyunn` と打ち直して「一瞬」を確定）。次から同じ打ち方をしたときは、打ったままの変換が自然に見えても、直した変換を 2 番目に「補正」の印付きで出します。覚えるのは、打ち直した部分とその前後 3 キー分のローマ字と回数だけです（最大 200 件、Mac の中に保存）
+- AI変換（Zenz）もオンのときは、Space 変換で見つかった補正の候補を、Zenz が前の文の流れをふまえて見直します。流れに合わない補正は外し、Mozc が出さなかった補正を加えることもあります（「AI補正」の印）
+- 前の文は、入力中のアプリから読み取ります。LINE のように前の文を返さないアプリでは、Mozlumi が直前に確定した文（64 文字まで）を代わりに使います。これはメモリの中だけに置き、ファイルには保存しません。5 分打たなかったとき、カーソルを動かしたとき、パスワード欄では使いません
 - 初期設定で有効です。設定画面の「サジェスト」タブにある「ローマ字の打ち間違いを補正する（誤入力補正）」でオン・オフできます
 
 辞書の語に人工的な打ち間違いを入れた評価（調整に使っていない検証用データ、同梱辞書）では、補正候補 3 件以内に目的の語が入った割合は 94.5%、正しく打っている途中で補正候補が出た割合は 0.8% でした。並び順は簡易的な再現による数値で、実際の表示とは異なる場合があります。
@@ -154,8 +158,9 @@ Mozlumi guesses one-keystroke typos in romaji input and adds corrected candidate
 | `kqisya` | 会社, 記者 |
 | `denhsa` | 電車 |
 | `gakkkou` | 学校 |
+| `syooryuuken` | 昇竜拳 (a long vowel typed as "oo") |
 
-- Covered typos: a neighboring key, two adjacent keys swapped, an extra key (including a doubled key), and a missed key
+- Covered typos: a neighboring key, two adjacent keys swapped, an extra key (including a doubled key), a missed key, and a long vowel spelled as it sounds ("oo" for "ou", "ee" for "ei", or the other way around)
 - Only readings that exist in the dictionary are used, up to 3. They are ranked by how likely the typo is and how common the word is, and are shown below regular candidates
 - No correction when the typed reading is already a word, or when it looks like the beginning of a common word
 - Works in romaji input, hiragana mode, for suggestions while typing and predictions (Tab)
@@ -164,6 +169,9 @@ Mozlumi guesses one-keystroke typos in romaji input and adds corrected candidate
 - When two or more letters that cannot become kana are left at the end (e.g. `yokuyary` → 「よくやry」), the conversion with only those letters fixed comes first (the typed text second)
 - On predictions (Tab) and Space conversion, typos at two places are also searched for input of 8 or more letters when no one-place correction is found (not on suggestions while typing)
 - When you commit a corrected candidate, the kind of typo (e.g. pressing q for a) is learned, and corrections of the same kind rank higher next time. Only the kinds of typos and their counts are stored, not the text you typed
+- When you convert with Space and then fix one or two keys before committing (e.g. 「一寸」 for `issunn`, retyped as `issyunn` and committed as 「一瞬」), the fix is learned. The next time you type the same way, the fixed conversion is offered second, marked 「補正」, even if the typed text converts naturally. Only the retyped part with three keys of romaji around it and a count are stored (up to 200, on your Mac)
+- When AI conversion (Zenz) is also on, Zenz reviews the corrected candidates found on Space conversion with the preceding text. It removes those that do not fit and may add one that Mozc did not offer (marked 「AI補正」)
+- The preceding text is read from the app you are typing in. In apps that do not provide it, such as LINE, the text Mozlumi committed just before (up to 64 characters) is used instead. It is kept only in memory and never saved to a file, and is not used after 5 minutes without typing, after the cursor moves, or in password fields
 - Enabled by default. It can be turned on or off on the Suggest tab of the settings (the checkbox label is in Japanese: 「ローマ字の打ち間違いを補正する（誤入力補正）」)
 
 In an evaluation with synthetic typos of dictionary words (held-out data, bundled dictionaries), the intended word was among the corrected candidates (up to 3) in 94.5% of cases, and corrections appeared while typing correctly in 0.8% of cases. The ranking was simplified in the evaluation, so actual results may differ.
