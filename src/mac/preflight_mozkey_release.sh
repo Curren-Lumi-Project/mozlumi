@@ -118,6 +118,11 @@ if [ ! -d "$_mozkey_app" ]; then
   else
     echo "Mozlumi preinstall: ALLOW clean installation of $_mozkey_target"
   fi
+  # Tell postinstall that this is a fresh installation (it adds the input
+  # source again so that it shows in the input menu without a logout).
+  if [ -n "${INSTALLER_TEMP:-}" ] && [ -d "$INSTALLER_TEMP" ] && [ ! -L "$INSTALLER_TEMP" ]; then
+    : > "$INSTALLER_TEMP/mozlumi_fresh_install" || true
+  fi
   exit 0
 fi
 

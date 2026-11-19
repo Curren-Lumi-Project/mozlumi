@@ -102,19 +102,6 @@ if ! /usr/bin/codesign --verify --deep --strict "$_mozkey_app"; then
   exit 1
 fi
 
-# Enable the newly installed input source only after the app signature passes.
-# Do not prompt or switch input sources during CLI installs or upgrades where
-# Mozkey is already enabled (the executable checks this via TIS).
-# An unavailable desktop session must not fail the package installation.
-if [ "${COMMAND_LINE_INSTALL:-}" != '1' ]; then
-  _mozkey_console_user=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null) || _mozkey_console_user=''
-  if [ -n "$_mozkey_console_user" ] && [ "$_mozkey_console_user" != 'root' ] && \
-     [ "$_mozkey_console_user" != 'loginwindow' ]; then
-    /usr/bin/sudo -u "$_mozkey_console_user" \
-      "$_mozkey_app/Contents/MacOS/Mozlumi" --register_input_source >/dev/null 2>&1 || true
-  fi
-fi
-
 # Mozlumi: reload the launch agents of the current user. The installer has
 # just replaced their plists, and launchd refuses to start a loaded agent
 # whose plist was replaced ("Unable to get updated LWCR") until it is loaded
@@ -146,5 +133,34 @@ if [ -n "${_mozkey_agent_uid:-}" ]; then
       /bin/launchctl bootstrap "gui/$_mozkey_agent_uid" "$_mozkey_agent_plist" >/dev/null 2>&1 || true
     }
   done
+fi
+# Enable the input source only after the app signature passes, and after the
+# launch agents are loaded so that the converter is ready when it is selected.
+# Run it inside the console user's GUI session (launchctl asuser): Text Input
+# Services changes made from the installer's own session do not reach the
+# user's input menu. Command line installs are included: on upgrades the
+# executable leaves an already enabled input source alone (it checks TIS), so
+# nothing is switched or prompted there.
+# On a fresh installation (marked by preinstall), macOS may still remember the
+# input source as enabled from an earlier installation, yet not show it in the
+# input menu until it is removed and added again. --reactivate_input_source
+# does that.
+# An unavailable desktop session must not fail the package installation.
+_mozkey_console_user=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null) || _mozkey_console_user=''
+_mozkey_console_uid=''
+if [ -n "$_mozkey_console_user" ] && [ "$_mozkey_console_user" != 'root' ] && \
+   [ "$_mozkey_console_user" != 'loginwindow' ]; then
+  _mozkey_console_uid=$(/usr/bin/id -u "$_mozkey_console_user" 2>/dev/null) || _mozkey_console_uid=''
+fi
+if [ -n "$_mozkey_console_uid" ]; then
+  _mozkey_reactivate=''
+  if [ -n "${INSTALLER_TEMP:-}" ] && [ -f "$INSTALLER_TEMP/mozlumi_fresh_install" ] && \
+     [ ! -L "$INSTALLER_TEMP/mozlumi_fresh_install" ]; then
+    _mozkey_reactivate='--reactivate_input_source'
+    echo 'Mozlumi postinstall: fresh installation; adding the input source again'
+  fi
+  /bin/launchctl asuser "$_mozkey_console_uid" /usr/bin/sudo -u "$_mozkey_console_user" \
+    "$_mozkey_app/Contents/MacOS/Mozlumi" --register_input_source $_mozkey_reactivate \
+    >/dev/null 2>&1 || true
 fi
 exit 0

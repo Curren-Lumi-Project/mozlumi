@@ -47,13 +47,17 @@
 
 ABSL_FLAG(bool, register_input_source, false,
           "Register and enable the input source in the system, then exit.");
+ABSL_FLAG(bool, reactivate_input_source, false,
+          "With --register_input_source: on a fresh installation, disable an "
+          "input source that macOS still remembers as enabled and enable it "
+          "again, so that it shows in the input menu without a logout.");
 
 namespace {
 
 // Registers the input source bundle with Text Input Services (TIS).
 // The enabled-source check avoids changing the currently selected IME on
 // upgrades.  This entry point is intended for the installed app executable.
-void RegisterInputSource() {
+void RegisterInputSource(bool reactivate) {
   NSBundle *bundle = [NSBundle mainBundle];
   CFURLRef bundleURL = (__bridge CFURLRef)[bundle bundleURL];
   if (bundleURL != nullptr) {
@@ -77,8 +81,13 @@ void RegisterInputSource() {
     CFBooleanRef isEnabled =
         (CFBooleanRef)TISGetInputSourceProperty(inputSource, kTISPropertyInputSourceIsEnabled);
     if (isEnabled != nullptr && CFBooleanGetValue(isEnabled)) {
-      // Avoid a permission prompt and preserve the user's active input source.
-      return;
+      if (!reactivate) {
+        // Avoid a permission prompt and preserve the user's active input source.
+        return;
+      }
+      // Fresh installation over an enabled state left by an earlier one: the
+      // input menu does not show the source until it is removed and added.
+      TISDisableInputSource(inputSource);
     }
 
     TISEnableInputSource(inputSource);
@@ -93,7 +102,7 @@ int main(int argc, char *argv[]) {
   mozc::InitMozc(argv[0], &argc, &argv);
 
   if (absl::GetFlag(FLAGS_register_input_source)) {
-    RegisterInputSource();
+    RegisterInputSource(absl::GetFlag(FLAGS_reactivate_input_source));
     return 0;
   }
 

@@ -84,8 +84,12 @@ class PostflightSafetyTest(unittest.TestCase):
         self.assertEqual(combined.count(register_command), 1)
         self.assertLess(combined.rfind(signature_check),
                         combined.index(register_command))
-        self.assertIn(b'${COMMAND_LINE_INSTALL:-}', combined)
+        self.assertIn(b'/bin/launchctl asuser "$_mozkey_console_uid"', combined)
         self.assertIn(b'/usr/bin/sudo -u "$_mozkey_console_user"', combined)
+        self.assertIn(b'--reactivate_input_source', combined)
+        # Register after the launch agents are loaded again.
+        self.assertLess(combined.index(b'launchctl bootstrap'),
+                        combined.index(register_command))
         self.assertNotIn(filter_script.UNSAFE_LINE, combined)
         self.assertTrue(combined.endswith(b'\nexit 0\n'))
 
