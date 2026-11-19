@@ -185,6 +185,19 @@ def TweakForProductbuild(
     with open('InstallerSections.plist', 'w') as f:
       f.write(''.join(contents))
 
+  if oss:
+    # Mozlumi: no installer plugin. The old activation pane (from Google
+    # Japanese Input) is replaced by the conclusion page, and the postinstall
+    # registers and enables the input source. Without InstallerSections.plist
+    # the installer shows its standard sections, including the conclusion.
+    renames = [
+        (src, dst)
+        for src, dst in renames
+        if src not in ('ActivatePane.bundle', 'InstallerSections.plist')
+    ]
+    shutil.rmtree('ActivatePane.bundle')
+    os.remove('InstallerSections.plist')
+
   for src, dst in renames:
     if dst.endswith('/'):
       dst = os.path.join(dst, src)

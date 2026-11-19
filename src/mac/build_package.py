@@ -127,12 +127,13 @@ def main():
         '/usr/bin/productbuild',
         '--distribution',
         'distribution.xml',
-        '--plugins',
-        'Plugins/',
         '--resources',
         'Resources/',
         'package.pkg',  # this name is only used within this script.
     ]
+    # Mozlumi: the OSS package has no installer plugin.
+    if os.path.isdir('Plugins'):
+      productbuild_commands[3:3] = ['--plugins', 'Plugins/']
     util.RunOrDie(productbuild_commands)
 
     # codesign the package and copy it to the output path.

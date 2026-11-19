@@ -80,6 +80,8 @@ Space で変換すると、ローカルの AI（Zenz）が裏で同じ文を変�
 [Releases](https://github.com/Curren-Lumi-Project/mozlumi/releases) から `Mozlumi_v…_macos_universal.pkg` をダウンロードしてインストールしてください。ソースからビルドすることもできます。
 
 - PKG は未署名です。初回は「システム設定」→「プライバシーとセキュリティ」から「このまま開く」で開いてください
+- インストールが終わると、Mozlumi は入力ソースに追加されます。初めてインストールしたときはログアウトが必要です（ログインし直すと入力メニューに出ます）。アップデートでは、ログアウトや再起動は必要ありません
+- インストール直後の最初の変換と、AI 変換を初めて使うときは、準備のため少し時間がかかることがあります
 - Mozkey・Mozc とは別のアプリとしてインストールされます（`/Library/Input Methods/Mozlumi.app`）。Mozkey と並べて使えます
 - 学習データ・設定は Mozkey とは別に保存されます（`~/Library/Application Support/Mozlumi`）。Mozkey からの引き継ぎはありません
 
@@ -198,6 +200,8 @@ While typing or converting, press **Option+Tab** to have the AI reconvert the wh
 Download `Mozlumi_v…_macos_universal.pkg` from [Releases](https://github.com/Curren-Lumi-Project/mozlumi/releases) and install it. You can also build from source.
 
 - The PKG is not signed. On first launch, open it from System Settings → Privacy & Security → Open Anyway
+- When the installation finishes, Mozlumi is added to your input sources. A first installation needs a logout (Mozlumi appears in the input menu after you log in again). Updates need no logout or restart
+- The first conversion after installing, and the first AI conversion, may take a moment while Mozlumi gets ready
 - Mozlumi is installed as a separate app from Mozkey and Mozc (`/Library/Input Methods/Mozlumi.app`), so it can be used side by side with Mozkey
 - Learning data and settings are stored separately from Mozkey (`~/Library/Application Support/Mozlumi`). Nothing is migrated from Mozkey
 

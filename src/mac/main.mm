@@ -35,6 +35,8 @@
 #import "mac/mozc_imk_input_controller.h"
 #import "mac/renderer_receiver.h"
 
+#include <unistd.h>
+
 #include <memory>
 
 #include "absl/flags/flag.h"
@@ -47,43 +49,121 @@
 
 ABSL_FLAG(bool, register_input_source, false,
           "Register and enable the input source in the system, then exit.");
+ABSL_FLAG(bool, reactivate_input_source, false,
+          "With --register_input_source: on a fresh installation, disable the "
+          "input source and its modes first if they are enabled, then enable "
+          "them again, so that they show in the input menu without a logout.");
 
 namespace {
 
-// Registers the input source bundle with Text Input Services (TIS).
-// The enabled-source check avoids changing the currently selected IME on
-// upgrades.  This entry point is intended for the installed app executable.
-void RegisterInputSource() {
-  NSBundle *bundle = [NSBundle mainBundle];
-  CFURLRef bundleURL = (__bridge CFURLRef)[bundle bundleURL];
-  if (bundleURL != nullptr) {
-    TISRegisterInputSource(bundleURL);
-  }
+// Writes one line for the installer log (postinstall passes it through).
+void RegisterLog(NSString *message) {
+  printf("Mozlumi register: %s\n", message.UTF8String);
+  fflush(stdout);
+}
 
+bool IsSourceEnabled(TISInputSourceRef source) {
+  CFBooleanRef enabled =
+      (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
+  return enabled != nullptr && CFBooleanGetValue(enabled);
+}
+
+// The input method itself (ID == bundle ID) and its modes (bundle ID + ".").
+// The input menu lists the modes, so the modes must be enabled as well.
+NSArray *FindOwnSources(NSString *bundleID) {
+  NSMutableArray *result = [NSMutableArray array];
+  NSArray *sourceList = CFBridgingRelease(TISCreateInputSourceList(nullptr, true));
+  NSString *modePrefix = [bundleID stringByAppendingString:@"."];
+  for (id object in sourceList) {
+    TISInputSourceRef source = (__bridge TISInputSourceRef)object;
+    NSString *sourceID =
+        (__bridge NSString *)TISGetInputSourceProperty(source, kTISPropertyInputSourceID);
+    if ([sourceID isEqualToString:bundleID] || [sourceID hasPrefix:modePrefix]) {
+      [result addObject:object];
+    }
+  }
+  return result;
+}
+
+NSString *SourceID(id object) {
+  return (__bridge NSString *)TISGetInputSourceProperty((__bridge TISInputSourceRef)object,
+                                                        kTISPropertyInputSourceID);
+}
+
+// Registers the input source bundle with Text Input Services (TIS) and
+// enables it with its modes.  An already enabled input source is left alone
+// (no permission prompt, the user's active input source is kept) unless
+// `reactivate` is set.  This entry point is intended for the installed app
+// executable.
+void RegisterInputSource(bool reactivate) {
+  NSBundle *bundle = [NSBundle mainBundle];
   NSString *bundleID = [bundle bundleIdentifier];
-  if (bundleID == nil) {
+  CFURLRef bundleURL = (__bridge CFURLRef)[bundle bundleURL];
+  if (bundleID == nil || bundleURL == nullptr) {
+    RegisterLog(@"no bundle identifier or URL");
+    return;
+  }
+  OSStatus status = TISRegisterInputSource(bundleURL);
+  RegisterLog([NSString stringWithFormat:@"register status=%d reactivate=%d uid=%d",
+                                         (int)status, reactivate ? 1 : 0, (int)getuid()]);
+
+  // Registration may take a moment before the sources are listed.
+  NSArray *sources = FindOwnSources(bundleID);
+  for (int i = 0; i < 50 && sources.count == 0; ++i) {
+    [NSThread sleepForTimeInterval:0.1];
+    sources = FindOwnSources(bundleID);
+  }
+  RegisterLog([NSString stringWithFormat:@"found %lu sources", (unsigned long)sources.count]);
+  if (sources.count == 0) {
     return;
   }
 
-  NSArray *sourceList = CFBridgingRelease(TISCreateInputSourceList(nullptr, true));
-  for (id object in sourceList) {
-    TISInputSourceRef inputSource = (__bridge TISInputSourceRef)object;
-    NSString *sourceID =
-        (__bridge NSString *)TISGetInputSourceProperty(inputSource, kTISPropertyInputSourceID);
-    if (![sourceID isEqualToString:bundleID]) {
-      continue;
+  bool anyEnabled = false;
+  for (id object in sources) {
+    bool enabled = IsSourceEnabled((__bridge TISInputSourceRef)object);
+    anyEnabled = anyEnabled || enabled;
+    RegisterLog([NSString stringWithFormat:@"before %@ enabled=%d", SourceID(object),
+                                           enabled ? 1 : 0]);
+  }
+  if (anyEnabled && !reactivate) {
+    RegisterLog(@"already enabled; nothing changed");
+    return;
+  }
+  if (anyEnabled) {
+    // Like removing it in System Settings before adding it again.
+    for (id object in sources) {
+      TISInputSourceRef source = (__bridge TISInputSourceRef)object;
+      if (IsSourceEnabled(source)) {
+        status = TISDisableInputSource(source);
+        RegisterLog([NSString stringWithFormat:@"disable %@ status=%d", SourceID(object),
+                                               (int)status]);
+      }
     }
+  }
 
-    CFBooleanRef isEnabled =
-        (CFBooleanRef)TISGetInputSourceProperty(inputSource, kTISPropertyInputSourceIsEnabled);
-    if (isEnabled != nullptr && CFBooleanGetValue(isEnabled)) {
-      // Avoid a permission prompt and preserve the user's active input source.
-      return;
+  // Enable the input method first, then its modes.
+  NSArray *ordered = [sources sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
+    return [@(SourceID(a).length) compare:@(SourceID(b).length)];
+  }];
+  id hiragana = nil;
+  for (id object in ordered) {
+    status = TISEnableInputSource((__bridge TISInputSourceRef)object);
+    RegisterLog([NSString stringWithFormat:@"enable %@ status=%d", SourceID(object),
+                                           (int)status]);
+    if ([SourceID(object) isEqualToString:[bundleID stringByAppendingString:@".base"]]) {
+      hiragana = object;
     }
+  }
+  id toSelect = hiragana != nil ? hiragana : ordered.firstObject;
+  status = TISSelectInputSource((__bridge TISInputSourceRef)toSelect);
+  RegisterLog([NSString stringWithFormat:@"select %@ status=%d", SourceID(toSelect),
+                                         (int)status]);
 
-    TISEnableInputSource(inputSource);
-    TISSelectInputSource(inputSource);
-    break;
+  for (id object in FindOwnSources(bundleID)) {
+    RegisterLog([NSString stringWithFormat:@"after %@ enabled=%d", SourceID(object),
+                                           IsSourceEnabled((__bridge TISInputSourceRef)object)
+                                               ? 1
+                                               : 0]);
   }
 }
 
@@ -93,7 +173,7 @@ int main(int argc, char *argv[]) {
   mozc::InitMozc(argv[0], &argc, &argv);
 
   if (absl::GetFlag(FLAGS_register_input_source)) {
-    RegisterInputSource();
+    RegisterInputSource(absl::GetFlag(FLAGS_reactivate_input_source));
     return 0;
   }
 
