@@ -1,0 +1,5 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+  <file alias="update_logo.png">../../data/images/product_icon_32bpp-128.png</file>
+</qresource>
+</RCC>
