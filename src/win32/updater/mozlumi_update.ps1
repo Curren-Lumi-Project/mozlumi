@@ -71,6 +71,7 @@ $UpgradeCode = '{584AEC93-7347-4103-AF0D-8C17411BE02F}'
 $ProductName = 'Mozlumi'
 $Manufacturer = 'Curren Lumi Project'
 $InstallDir = Join-Path ${env:ProgramFiles(x86)} 'Mozlumi'
+$ToolPath = Join-Path $InstallDir 'mozlumi_tool.exe'
 $TagPattern = '^v([0-9]+)\.([0-9]+)\.([0-9]+)-build([0-9]+)$'
 
 # Exit codes of the administrator step (also used by the Mac updater).
@@ -217,6 +218,16 @@ function Invoke-Install {
 
 # --------------------------------------------------------------------------
 # Windows
+#
+# The windows are shown by "mozlumi_tool.exe --mode=update_dialog"
+# (gui/update_dialog) in the look of the other Mozlumi windows. If the tool
+# cannot show them, plain Windows Forms windows are used instead, so that an
+# update never stops because of a window.
+
+# Exit codes of the question window. Must match gui/update_dialog.
+$ToolExitUpdate = 10
+$ToolExitLater = 11
+$ToolExitSkip = 12
 
 function Initialize-Ui {
   Add-Type -AssemblyName System.Windows.Forms
@@ -224,11 +235,49 @@ function Initialize-Ui {
   [System.Windows.Forms.Application]::EnableVisualStyles()
 }
 
+# --update_dialog_text: a line break is "\n", and the whole argument is quoted.
+function ConvertTo-ToolText([string]$Text) {
+  return $Text.Replace("`r", '').Replace("`n", '\n').Replace('"', "'").TrimEnd('\')
+}
+
+# Shows a window by mozlumi_tool.exe and returns its exit code, or $null if
+# the tool cannot be started.
+function Invoke-ToolWindow([string]$Type, [string]$Text) {
+  if (-not (Test-Path -LiteralPath $ToolPath -PathType Leaf)) {
+    return $null
+  }
+  try {
+    $process = Start-Process -FilePath $ToolPath -Wait -PassThru -ArgumentList @(
+        '--mode=update_dialog', "--update_dialog_type=$Type",
+        ('"--update_dialog_text=' + (ConvertTo-ToolText $Text) + '"'))
+    return $process.ExitCode
+  } catch {
+    return $null
+  }
+}
+
+$script:ProgressFile = $null
+$script:ProgressProcess = $null
 $script:ProgressForm = $null
 $script:ProgressLabel = $null
 $script:ProgressBar = $null
 
-function Start-Progress {
+# The progress window of the tool follows this file: "<fraction><TAB><text>"
+# or "quit". The file is replaced as a whole.
+function Write-ProgressFile([string]$Content) {
+  if ($null -eq $script:ProgressFile) {
+    return
+  }
+  $temp = $script:ProgressFile + '.tmp'
+  try {
+    [IO.File]::WriteAllText($temp, $Content, (New-Object Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $temp -Destination $script:ProgressFile -Force
+  } catch {
+    # The window may be reading the file; the next update writes it again.
+  }
+}
+
+function Start-FormsProgress {
   $form = New-Object System.Windows.Forms.Form
   $form.Text = 'Mozlumi'
   $form.Font = [System.Drawing.SystemFonts]::MessageBoxFont
@@ -255,8 +304,31 @@ function Start-Progress {
   [System.Windows.Forms.Application]::DoEvents()
 }
 
+# Shows the progress window. $Dir is the work folder for the progress file.
+function Start-Progress([string]$Dir) {
+  $script:ProgressFile = Join-Path $Dir 'progress.txt'
+  Write-ProgressFile "-1`t準備中…"
+  if (Test-Path -LiteralPath $ToolPath -PathType Leaf) {
+    try {
+      $script:ProgressProcess = Start-Process -FilePath $ToolPath -PassThru -ArgumentList @(
+          '--mode=update_dialog', '--update_dialog_type=progress',
+          ('"--update_progress_file=' + $script:ProgressFile + '"'),
+          "--update_parent_pid=$PID")
+      return
+    } catch {
+      $script:ProgressProcess = $null
+    }
+  }
+  Start-FormsProgress
+}
+
 # Fraction 0..1, or a negative number for an indeterminate bar.
 function Set-Progress([double]$Fraction, [string]$Text) {
+  if ($null -ne $script:ProgressProcess) {
+    Write-ProgressFile ($Fraction.ToString([Globalization.CultureInfo]::InvariantCulture) +
+                        "`t" + $Text)
+    return
+  }
   if ($null -eq $script:ProgressForm) {
     return
   }
@@ -271,6 +343,16 @@ function Set-Progress([double]$Fraction, [string]$Text) {
 }
 
 function Stop-Progress {
+  if ($null -ne $script:ProgressProcess) {
+    Write-ProgressFile 'quit'
+    try {
+      if (-not $script:ProgressProcess.WaitForExit(3000)) {
+        $script:ProgressProcess.Kill()
+      }
+    } catch {
+    }
+    $script:ProgressProcess = $null
+  }
   if ($null -ne $script:ProgressForm) {
     $script:ProgressForm.Close()
     $script:ProgressForm.Dispose()
@@ -280,6 +362,9 @@ function Stop-Progress {
 
 function Show-Message([string]$Text) {
   Stop-Progress
+  if ((Invoke-ToolWindow 'message' $Text) -eq 0) {
+    return
+  }
   # An invisible top-most owner keeps the message in front of other windows.
   $owner = New-Object System.Windows.Forms.Form
   $owner.TopMost = $true
@@ -297,6 +382,16 @@ function Show-Message([string]$Text) {
 # Returns 'update', 'later' or 'skip'.
 function Show-UpdateQuestion([string]$Text) {
   Stop-Progress
+  $code = Invoke-ToolWindow 'question' $Text
+  if ($code -eq $ToolExitUpdate) {
+    return 'update'
+  }
+  if ($code -eq $ToolExitLater) {
+    return 'later'
+  }
+  if ($code -eq $ToolExitSkip) {
+    return 'skip'
+  }
   $form = New-Object System.Windows.Forms.Form
   $form.Text = 'Mozlumi'
   $form.Font = [System.Drawing.SystemFonts]::MessageBoxFont
@@ -584,7 +679,7 @@ function Invoke-Check {
     $msi = Join-Path $workDir $msiName
     $sha = Join-Path $workDir $shaName
     $size = [long]$msiAsset.size
-    Start-Progress
+    Start-Progress $workDir
     try {
       $got = Save-WebFile ([string]$msiAsset.browser_download_url) $msi $size $size
       [void](Save-WebFile ([string]$shaAsset.browser_download_url) $sha 0 4096)
@@ -637,7 +732,9 @@ function Invoke-Check {
       }
       3010 {
         Remove-Item -LiteralPath $skipFile -Force -ErrorAction SilentlyContinue
-        Show-Message "Mozlumi を $newLabel に更新しました。パソコンを再起動すると、更新が完了します。"
+        # Some files were in use; Windows replaces them at the next restart.
+        Show-Message ("Mozlumi を $newLabel に更新しました。`n`n" +
+            '一部のファイルは、パソコンを次に再起動したときに入れ替わります。')
         return 0
       }
       1602 {

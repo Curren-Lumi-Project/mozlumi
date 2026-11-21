@@ -50,7 +50,7 @@ MOZKEY_RELEASE_VERSION_PATCH = 0
 # this number and keep the release version above. New features change the
 # release version (decided by the maintainer). This number is never reset.
 # Currently used for package file names (e.g. Mozkey_v1.1.3_build1_...).
-MOZLUMI_BUILD = 40
+MOZLUMI_BUILD = 41
 
 # macOS bundle and installer versions must advance beyond existing Mozc builds
 # (such as 3.33.6153.101) while retaining the user-visible Mozkey version.

@@ -44,6 +44,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDialog>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPixmap>
@@ -55,9 +56,11 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "absl/flags/flag.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
@@ -89,7 +92,7 @@ constexpr int kExitSkip = 12;
 constexpr int kExitError = 1;
 
 constexpr int kLogoSize = 64;
-constexpr int kTextWidth = 380;
+constexpr int kTextWidth = 420;
 
 QString FlagText() {
   return QString::fromStdString(absl::GetFlag(FLAGS_update_dialog_text))
@@ -100,14 +103,24 @@ QDialog::DialogCode ToDialogCode(int code) {
   return static_cast<QDialog::DialogCode>(code);
 }
 
+// The 512px logo, scaled smoothly for the screen so that it stays sharp on
+// high DPI screens.
+QPixmap LogoPixmap(int logical_size) {
+  const qreal ratio = qGuiApp->devicePixelRatio();
+  const int size = qRound(logical_size * ratio);
+  QPixmap pixmap = QPixmap(QStringLiteral(":/update_logo.png"))
+                       .scaled(size, size, Qt::KeepAspectRatio,
+                               Qt::SmoothTransformation);
+  pixmap.setDevicePixelRatio(ratio);
+  return pixmap;
+}
+
 // The logo and the message, side by side.
 QHBoxLayout *NewMessageRow(const QString &text) {
   QHBoxLayout *row = new QHBoxLayout();
   row->setSpacing(16);
   QLabel *logo = new QLabel();
-  logo->setPixmap(QPixmap(QStringLiteral(":/update_logo.png"))
-                      .scaled(kLogoSize, kLogoSize, Qt::KeepAspectRatio,
-                              Qt::SmoothTransformation));
+  logo->setPixmap(LogoPixmap(kLogoSize));
   logo->setAlignment(Qt::AlignTop);
   QLabel *label = new QLabel(text);
   label->setWordWrap(true);
@@ -228,9 +241,7 @@ int RunProgress() {
   QHBoxLayout *row = new QHBoxLayout();
   row->setSpacing(16);
   QLabel *logo = new QLabel();
-  logo->setPixmap(QPixmap(QStringLiteral(":/update_logo.png"))
-                      .scaled(48, 48, Qt::KeepAspectRatio,
-                              Qt::SmoothTransformation));
+  logo->setPixmap(LogoPixmap(48));
   QVBoxLayout *right = new QVBoxLayout();
   QLabel *label = new QLabel(QString::fromUtf8("準備中…"));
   label->setFixedWidth(kTextWidth);
