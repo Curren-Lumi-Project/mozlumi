@@ -34,6 +34,10 @@ using ::mozc::zenz::ZenzWireResponseHeader;
 
 #if defined(_WIN32)
 
+// Mozlumi: the installed name of the Zenz scorer (see
+// win32/installer/installer_oss_64bit.wxs).
+constexpr wchar_t kScorerExeName[] = L"mozlumi_zenz_scorer.exe";
+
 constexpr uint32_t kMaxPromptBytes = 8192;
 constexpr uint32_t kMaxResponseValueBytes = 1024 * 1024;
 constexpr uint32_t kMaxResponseDebugBytes = 64 * 1024;
@@ -371,7 +375,7 @@ bool IsTrustedScorerPipeServer(HANDLE pipe) {
     return false;
   }
   const std::wstring expected_path =
-      JoinPath(module_dir, L"mozc_zenz_scorer.exe");
+      JoinPath(module_dir, kScorerExeName);
   // Compare the process's image name captured by Windows, not the contents of
   // a path that can be redirected after the process started. A protected
   // installation directory is a necessary part of this security boundary.
@@ -408,7 +412,7 @@ bool LaunchZenzScorerIfNeeded() {
   }
 
   const std::wstring dir = GetCurrentModuleDirectory();
-  const std::wstring scorer_path = JoinPath(dir, L"mozc_zenz_scorer.exe");
+  const std::wstring scorer_path = JoinPath(dir, kScorerExeName);
 
   const DWORD attr = ::GetFileAttributesW(scorer_path.c_str());
   if (attr == INVALID_FILE_ATTRIBUTES ||

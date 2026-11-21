@@ -81,7 +81,7 @@ class ScopedUserProfileForZenzFeedbackStoreTest {
 
     const std::wstring app_data_dir = JoinPath(profile_dir_, L"AppData");
     const std::wstring local_low_dir = JoinPath(app_data_dir, L"LocalLow");
-    const std::wstring mozc_dir = JoinPath(local_low_dir, L"Mozc");
+    const std::wstring mozc_dir = JoinPath(local_low_dir, L"Mozlumi");
     const std::wstring feedback_path = JoinPath(mozc_dir, L"zenz_feedback.tsv");
 
     ::DeleteFileW(feedback_path.c_str());
@@ -96,7 +96,7 @@ class ScopedUserProfileForZenzFeedbackStoreTest {
   std::wstring feedback_path() const {
     const std::wstring app_data_dir = JoinPath(profile_dir_, L"AppData");
     const std::wstring local_low_dir = JoinPath(app_data_dir, L"LocalLow");
-    const std::wstring mozc_dir = JoinPath(local_low_dir, L"Mozc");
+    const std::wstring mozc_dir = JoinPath(local_low_dir, L"Mozlumi");
     return JoinPath(mozc_dir, L"zenz_feedback.tsv");
   }
 
@@ -638,7 +638,7 @@ TEST(ZenzFeedbackStoreTest, GetAcceptedCandidatesAcceptsUtf8Bom) {
 
   ZenzFeedbackStore store;
 
-  // Create %USERPROFILE%\AppData\LocalLow\Mozc first.  This test intentionally
+  // Create %USERPROFILE%\AppData\LocalLow\Mozlumi first.  This test intentionally
   // overwrites the TSV directly to simulate a file saved by tools/editors that
   // write UTF-8 with BOM.
   store.RecordAccepted("__mkdir__", "empty", "__mkdir__");

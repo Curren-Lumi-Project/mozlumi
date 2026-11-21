@@ -317,8 +317,11 @@ std::string UserProfileDirectoryImpl::GetUserProfileDirectory() const {
     if (absl::Status s = FileUtil::CreateDirectory(dir); !s.ok()) {
       LOG(ERROR) << s;
     }
-#endif  // GOOGLE_JAPANESE_INPUT_BUILD
     return FileUtil::JoinPath(dir, kProductNameInEnglish);
+#else   // GOOGLE_JAPANESE_INPUT_BUILD
+    // Mozlumi: separate profile from Mozc/Mozkey (no automatic migration).
+    return FileUtil::JoinPath(dir, kMozlumiWinProductName);
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
 #elif defined(TARGET_OS_OSX) && TARGET_OS_OSX
     std::string dir = MacUtil::GetApplicationSupportDirectory();
@@ -458,7 +461,8 @@ constexpr wchar_t kMozcTipClsid[] =
 #ifdef GOOGLE_JAPANESE_INPUT_BUILD
     L"{D5A86FD5-5308-47EA-AD16-9C4EB160EC3C}"
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}"
+    // Mozlumi: must match kMozcTextService in win32/base/tsf_profile.cc.
+    L"{A34DEDAC-0BD6-4171-9032-B264DFE6489B}"
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
     L"\\InprocServer32";
 
@@ -504,8 +508,9 @@ std::string SystemUtil::GetServerDirectory() {
                          kCompanyNameInEnglish),
       kProductNameInEnglish);
 #else   // GOOGLE_JAPANESE_INPUT_BUILD
+  // Mozlumi: separate install directory from Mozc/Mozkey.
   return FileUtil::JoinPath(ProgramFilesX86Cache::GetInstance()->path(),
-                            kProductNameInEnglish);
+                            kMozlumiWinProductName);
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
 #elif defined(__APPLE__)

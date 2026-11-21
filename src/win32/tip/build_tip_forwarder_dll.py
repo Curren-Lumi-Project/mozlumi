@@ -106,35 +106,35 @@ class ForwarderInfo:
   @property
   def forwarder_dll_name(self) -> str:
     return {
-        'Mozc': 'mozc_tip64x.dll',
+        'Mozc': 'mozlumi_tip64x.dll',
         'GoogleJapaneseInput': 'GoogleIMEJaTIP64X.dll',
     }[self.branding]
 
   @property
   def x64_impl_dll_name(self) -> str:
     return {
-        'Mozc': 'mozc_tip64.dll',
+        'Mozc': 'mozlumi_tip64.dll',
         'GoogleJapaneseInput': 'GoogleIMEJaTIP64.dll',
     }[self.branding]
 
   @property
   def arm64_impl_dll_name(self) -> str:
     return {
-        'Mozc': 'mozc_tip64arm.dll',
+        'Mozc': 'mozlumi_tip64arm.dll',
         'GoogleJapaneseInput': 'GoogleIMEJaTIP64Arm.dll',
     }[self.branding]
 
   @property
   def file_description(self) -> str:
     return {
-        'Mozc': 'Mozc TIP Module Forwarder',
+        'Mozc': 'Mozlumi TIP Module Forwarder',
         'GoogleJapaneseInput': 'Google 日本語入力 TIP モジュール フォワーダー',
     }[self.branding]
 
   @property
   def product_name(self) -> str:
     return {
-        'Mozc': 'Mozc',
+        'Mozc': 'Mozlumi',
         'GoogleJapaneseInput': 'Google 日本語入力',
     }[self.branding]
 
@@ -152,7 +152,11 @@ class ForwarderInfo:
     original_file_name = self.forwarder_dll_name
     internal_name = str(pathlib.Path(original_file_name).stem)
     product_name = self.product_name
-    product_copyright = 'Google LLC'
+    product_copyright = {
+        'Mozc': ('Copyright 2026 Curren Lumi Project. Portions Copyright 2026'
+                 ' koyasi777, 2010-2026 Google LLC.'),
+        'GoogleJapaneseInput': 'Google LLC',
+    }[self.branding]
 
     return '\n'.join([
         '#include "winres.h"',

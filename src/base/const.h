@@ -104,36 +104,51 @@ inline constexpr wchar_t kMozcRegKey[] =
 inline constexpr wchar_t kElevatedProcessDisabledKey[] =
     L"Software\\Policies\\Google\\Google Japanese Input\\Preferences";
 #else   // !GOOGLE_JAPANESE_INPUT_BUILD
-inline constexpr char kCompanyNameInEnglish[] = "Mozc Project";
+// Mozlumi: Windows identity. Every name below is kept separate from
+// Mozc/Mozkey (which use "Mozc" names on Windows) so that Mozlumi can be
+// installed side by side with them. Keep the file names in sync with
+// executable_name_map in BUILD.bazel files and installer_oss_64bit.wxs.
+inline constexpr char kCompanyNameInEnglish[] = "Curren Lumi Project";
 // Use Local prefix so that modules running under AppContainer can access.
-inline constexpr char kEventPathPrefix[] = "Local\\Mozc.event.";
-inline constexpr char kMutexPathPrefix[] = "Local\\Mozc.mutex.";
-inline constexpr char kMozcServerName[] = "mozc_server.exe";
-inline constexpr char kIMEFile[] = "mozc_ja.ime";
-inline constexpr char kMozcTIP32[] = "mozc_tip32.dll";
-inline constexpr char kMozcTIP64[] = "mozc_tip64.dll";
-inline constexpr char kMozcTIP64X[] = "mozc_tip64x.dll";
-inline constexpr char kMozcBroker[] = "mozc_broker.exe";
-inline constexpr char kMozcTool[] = "mozc_tool.exe";
-inline constexpr char kMozcRenderer[] = "mozc_renderer.exe";
-inline constexpr char kMozcCacheServiceExeName[] = "mozc_cache_service.exe";
-inline constexpr wchar_t kMozcCacheServiceName[] = L"MozcCacheService";
+inline constexpr char kEventPathPrefix[] = "Local\\Mozlumi.event.";
+inline constexpr char kMutexPathPrefix[] = "Local\\Mozlumi.mutex.";
+inline constexpr char kMozcServerName[] = "mozlumi_server.exe";
+inline constexpr char kIMEFile[] = "mozlumi_ja.ime";
+inline constexpr char kMozcTIP32[] = "mozlumi_tip32.dll";
+inline constexpr char kMozcTIP64[] = "mozlumi_tip64.dll";
+inline constexpr char kMozcTIP64X[] = "mozlumi_tip64x.dll";
+inline constexpr char kMozcBroker[] = "mozlumi_broker.exe";
+inline constexpr char kMozcTool[] = "mozlumi_tool.exe";
+inline constexpr char kMozcRenderer[] = "mozlumi_renderer.exe";
+inline constexpr char kMozcCacheServiceExeName[] = "mozlumi_cache_service.exe";
+inline constexpr wchar_t kMozcCacheServiceName[] = L"MozlumiCacheService";
 inline constexpr wchar_t kMessageReceiverMessageName[] =
-    L"mozc.renderer.message";
-inline constexpr wchar_t kMessageReceiverClassName[] = L"mozc.renderer.window";
-inline constexpr wchar_t kCandidateWindowClassName[] = L"MozcCandidateWindow";
+    L"mozlumi.renderer.message";
+inline constexpr wchar_t kMessageReceiverClassName[] =
+    L"mozlumi.renderer.window";
+inline constexpr wchar_t kCandidateWindowClassName[] =
+    L"MozlumiCandidateWindow";
 inline constexpr wchar_t kCompositionWindowClassName[] =
-    L"MozcCompositionWindow";
-inline constexpr wchar_t kIndicatorWindowClassName[] = L"MozcIndicatorWindow";
-inline constexpr wchar_t kInfolistWindowClassName[] = L"MozcInfolistWindow";
-inline constexpr wchar_t kIMEUIWndClassName[] = L"MozcUIWindow";
-inline constexpr char kIPCPrefix[] = "\\\\.\\pipe\\mozc.";
-inline constexpr wchar_t kCandidateUIDescription[] = L"MozcCandidateUI";
-inline constexpr wchar_t kConfigurationDisplayname[] = L"Mozc Configuration";
-inline constexpr wchar_t kMozcRegKey[] = L"Software\\Mozc Project\\Mozc";
+    L"MozlumiCompositionWindow";
+inline constexpr wchar_t kIndicatorWindowClassName[] =
+    L"MozlumiIndicatorWindow";
+inline constexpr wchar_t kInfolistWindowClassName[] = L"MozlumiInfolistWindow";
+// Must fit in kIMEUIwndClassNameLimitInTchars including the null terminator.
+inline constexpr wchar_t kIMEUIWndClassName[] = L"MozlumiUIWindow";
+inline constexpr char kIPCPrefix[] = "\\\\.\\pipe\\mozlumi.";
+inline constexpr wchar_t kCandidateUIDescription[] = L"MozlumiCandidateUI";
+inline constexpr wchar_t kConfigurationDisplayname[] =
+    L"Mozlumi Configuration";
+inline constexpr wchar_t kMozcRegKey[] =
+    L"Software\\Curren Lumi Project\\Mozlumi";
 inline constexpr wchar_t kElevatedProcessDisabledKey[] =
-    L"Software\\Policies\\Mozc Project\\Mozc\\Preferences";
+    L"Software\\Policies\\Curren Lumi Project\\Mozlumi\\Preferences";
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+// Mozlumi: the folder name of the install directory (under Program Files) and
+// of the user profile directory (under LocalLow) on Windows.
+#define kMozlumiWinProductName "Mozlumi"
+// Mozlumi: the installed name of the Zenz scorer on Windows.
+inline constexpr char kMozlumiZenzScorerExeName[] = "mozlumi_zenz_scorer.exe";
 #elif defined(__APPLE__)
 inline constexpr char kMozcServerName[] = kProductPrefix "Converter.app";
 inline constexpr char kMozcRenderer[] = kProductPrefix "Renderer.app";

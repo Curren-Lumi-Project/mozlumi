@@ -90,9 +90,9 @@ constexpr int kTsfProfileIconIndexSimpleHighContrast = 17;
 
 constexpr wchar_t kTsfProfileSubKey[] =
     L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}\\"
+    L"{A34DEDAC-0BD6-4171-9032-B264DFE6489B}\\"
     L"LanguageProfile\\0x00000411\\"
-    L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}";
+    L"{B09813B1-1DA5-4779-BED8-39097D25778D}";
 
 bool EndsWithCaseInsensitive(const std::wstring& text,
                              const std::wstring& suffix) {
@@ -144,16 +144,16 @@ std::wstring GetCurrentModuleDirectory() {
 std::wstring GetFallbackTsfProfileIconFile() {
   const std::wstring module_dir = GetCurrentModuleDirectory();
   if (!module_dir.empty()) {
-    return module_dir + L"\\mozc_tip32.dll";
+    return module_dir + L"\\mozlumi_tip32.dll";
   }
 
   wchar_t program_files_x86[MAX_PATH] = {};
   const DWORD length = ::GetEnvironmentVariableW(
       L"ProgramFiles(x86)", program_files_x86, MAX_PATH);
   if (length > 0 && length < MAX_PATH) {
-    return std::wstring(program_files_x86) + L"\\Mozc\\mozc_tip32.dll";
+    return std::wstring(program_files_x86) + L"\\Mozlumi\\mozlumi_tip32.dll";
   }
-  return L"C:\\Program Files (x86)\\Mozc\\mozc_tip32.dll";
+  return L"C:\\Program Files (x86)\\Mozlumi\\mozlumi_tip32.dll";
 }
 
 bool ReadTsfProfileIconFile(std::wstring* icon_file) {
@@ -179,7 +179,7 @@ bool ReadTsfProfileIconFile(std::wstring* icon_file) {
 std::wstring GetTsfProfileIconFileToWrite() {
   std::wstring icon_file;
   if (ReadTsfProfileIconFile(&icon_file) &&
-      EndsWithCaseInsensitive(icon_file, L"\\mozc_tip32.dll")) {
+      EndsWithCaseInsensitive(icon_file, L"\\mozlumi_tip32.dll")) {
     return icon_file;
   }
   return GetFallbackTsfProfileIconFile();

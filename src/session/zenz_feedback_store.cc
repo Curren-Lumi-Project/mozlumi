@@ -194,7 +194,9 @@ std::wstring GetFeedbackDirWide() {
     return L"";
   }
 
-  const std::wstring dir = local_low + L"\\Mozc";
+  // Mozlumi: the same folder as SystemUtil::GetUserProfileDirectory(), kept
+  // separate from Mozc/Mozkey ("LocalLow\\Mozc").
+  const std::wstring dir = local_low + L"\\Mozlumi";
 
   if (!EnsureDirectoryExists(dir)) {
     StoreDebugOutputWide(
