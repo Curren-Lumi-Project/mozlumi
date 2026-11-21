@@ -1,0 +1,318 @@
+name: Mozlumi Windows build (manual)
+
+# Mozlumi 専用の Windows（x64）ビルド。手動でだけ動かす（push では動かない）。
+#
+# - 手動で動かすには、このファイルが既定のブランチ（main）にある必要がある。
+#   ビルドするブランチ・タグ・コミットは、実行するときに「ref」で選ぶ。
+# - できるもの：Mozlumi_v<版>_build<N>_windows_x64.msi と、その .sha256。
+#   名前と .sha256 の形は、Windows のアップデート機能（mozlumi_update.ps1）が
+#   リリースから探す形に合わせてある。
+# - 道具：x64 の LLVM は update_deps.py の 20.1.1。本家 Mozkey は、Clang 20.1.1
+#   のソースを Visual Studio 2022（windows-2022）でビルドしている（e7082626）。
+#   ここも同じにする。LLVM を 22 系に上げたら、windows-2025 への切り替えを考えること。
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'ビルドするブランチ・タグ・コミット'
+        type: string
+        required: true
+        default: main
+      run_tests:
+        description: 'テストも動かす（bazelisk test ... -c dbg --build_tests_only）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mozlumi-windows-build-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build_x64:
+    name: Build Mozlumi64.msi (x64)
+    runs-on: windows-2022
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: false
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Read version and build number
+        id: version
+        shell: pwsh
+        env:
+          SOURCE_REF: ${{ inputs.ref }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $text = Get-Content -LiteralPath 'src/version.bzl' -Raw
+          function Get-Field([string]$Name) {
+            $m = [regex]::Match($text, "(?m)^$Name\s*=\s*(\d+)\s*$")
+            if (-not $m.Success) { throw "$Name was not found in src/version.bzl" }
+            return $m.Groups[1].Value
+          }
+          $version = '{0}.{1}.{2}' -f (Get-Field 'MOZKEY_RELEASE_VERSION_MAJOR'),
+              (Get-Field 'MOZKEY_RELEASE_VERSION_MINOR'),
+              (Get-Field 'MOZKEY_RELEASE_VERSION_PATCH')
+          $build = Get-Field 'MOZLUMI_BUILD'
+          $name = "Mozlumi_v${version}_build${build}_windows_x64"
+          $commit = (git rev-parse HEAD).Trim()
+          Write-Host "Source:  $env:SOURCE_REF ($commit)"
+          Write-Host "Version: $version Build $build"
+          "version=$version" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "build=$build" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "name=$name" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "commit=$commit" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Check the updater script (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\win32\updater\mozlumi_update.ps1'
+          if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            Write-Host "mozlumi_update.ps1 is not in this source. Skipped."
+            exit 0
+          }
+          $bytes = [IO.File]::ReadAllBytes($path)
+          if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+            throw "mozlumi_update.ps1 does not start with a UTF-8 BOM."
+          }
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) {
+            foreach ($e in $errors) { Write-Host ("line {0}: {1}" -f $e.Extent.StartLineNumber, $e.Message) }
+            throw "mozlumi_update.ps1 has $($errors.Count) parse error(s)."
+          }
+          Write-Host ("mozlumi_update.ps1: BOM ok, 0 parse errors (PowerShell {0})" -f $PSVersionTable.PSVersion)
+
+      - name: Prepare daily dictionary
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\tools\dictionary\prepare_daily_dictionary.ps1
+
+      - name: Try to restore update_deps cache
+        uses: actions/cache@v5
+        with:
+          path: src/third_party_cache
+          key: mozlumi-update_deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/build_tools/update_deps.py') }}
+
+      - name: Install Dependencies
+        shell: cmd
+        working-directory: .\src
+        # This command uses src/third_party_cache as the download cache.
+        run: |
+          python build_tools/update_deps.py
+
+      - name: Check Clang and use Visual Studio 2022
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $clang = '.\src\third_party\llvm\bin\clang-cl.exe'
+          if (-not (Test-Path -LiteralPath $clang -PathType Leaf)) {
+            throw 'clang-cl.exe was not found in src\third_party\llvm\bin.'
+          }
+          $clangVersion = & $clang --version
+          if ($LASTEXITCODE -ne 0 -or (($clangVersion -join ' ') -notmatch 'clang version 20\.')) {
+            throw "This workflow expects Clang 20 with Visual Studio 2022, got: $($clangVersion -join ' '). If LLVM was updated, switch the runner to windows-2025."
+          }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+            throw 'vswhere.exe was not found.'
+          }
+          $install = @(& $vswhere -latest -products '*' -version '[17.0,18.0)' -property installationPath)
+          if ($LASTEXITCODE -ne 0 -or $install.Count -ne 1 -or [string]::IsNullOrWhiteSpace($install[0])) {
+            throw 'Visual Studio 2022 was not found uniquely.'
+          }
+          $vc = Join-Path $install[0].Trim() 'VC'
+          if (-not (Test-Path -LiteralPath $vc -PathType Container)) {
+            throw "Visual Studio 2022 VC directory is missing: $vc"
+          }
+          "BAZEL_VC=$vc" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Clang:    $($clangVersion[0])"
+          Write-Host "BAZEL_VC: $vc"
+
+      - name: Build Qt
+        shell: cmd
+        working-directory: .\src
+        run: |
+          python build_tools/build_qt.py --release --confirm_license
+
+      # This is needed only for GitHub Actions where free disk space is quite limited.
+      - name: Delete Qt src to save disk space
+        shell: cmd
+        working-directory: .\src
+        run: |
+          rmdir third_party\qt_src /s /q
+
+      - name: Build Mozlumi64.msi
+        shell: cmd
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: |
+          bazelisk build --config release_build package
+
+      - name: Check the MSI and give it the release name
+        shell: powershell
+        env:
+          MOZLUMI_VERSION: ${{ steps.version.outputs.version }}
+          MOZLUMI_BUILD: ${{ steps.version.outputs.build }}
+          MOZLUMI_NAME: ${{ steps.version.outputs.name }}
+          MOZLUMI_COMMIT: ${{ steps.version.outputs.commit }}
+          SOURCE_REF: ${{ inputs.ref }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = Join-Path $env:GITHUB_WORKSPACE 'src\bazel-bin\win32\installer\Mozlumi64.msi'
+          if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) {
+            throw "Mozlumi64.msi was not produced: $msi"
+          }
+
+          # Read the Property table (read-only), like the updater does.
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($msi, 0))
+          $props = @{}
+          foreach ($p in @('ProductName', 'ProductVersion', 'Manufacturer', 'UpgradeCode')) {
+            $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db,
+                @("SELECT ``Value`` FROM ``Property`` WHERE ``Property`` = '$p'"))
+            [void]$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+            $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+            if ($null -ne $record) {
+              $props[$p] = [string]$record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1)
+              [void][Runtime.InteropServices.Marshal]::ReleaseComObject($record)
+            }
+            [void]$view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+            [void][Runtime.InteropServices.Marshal]::ReleaseComObject($view)
+          }
+          [void][Runtime.InteropServices.Marshal]::ReleaseComObject($db)
+          [void][Runtime.InteropServices.Marshal]::ReleaseComObject($installer)
+          [GC]::Collect()
+          [GC]::WaitForPendingFinalizers()
+
+          foreach ($p in @('ProductName', 'ProductVersion', 'Manufacturer', 'UpgradeCode')) {
+            Write-Host ("{0,-15} {1}" -f $p, $props[$p])
+          }
+          $expected = [ordered]@{
+            ProductName    = 'Mozlumi'
+            ProductVersion = "$env:MOZLUMI_VERSION.$env:MOZLUMI_BUILD"
+            Manufacturer   = 'Curren Lumi Project'
+            UpgradeCode    = '{584AEC93-7347-4103-AF0D-8C17411BE02F}'
+          }
+          foreach ($key in $expected.Keys) {
+            if ([string]$props[$key] -ne $expected[$key]) {
+              throw "$key is '$($props[$key])', expected '$($expected[$key])'."
+            }
+          }
+
+          $outDir = Join-Path $env:RUNNER_TEMP 'mozlumi-msi'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $msiName = "$env:MOZLUMI_NAME.msi"
+          $out = Join-Path $outDir $msiName
+          Copy-Item -LiteralPath $msi -Destination $out
+          $hash = (Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash.ToLowerInvariant()
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          [IO.File]::WriteAllText("$out.sha256", "$hash  $msiName`n", $utf8)
+          $size = (Get-Item -LiteralPath $out).Length
+
+          $summary = @(
+            "## $msiName",
+            '',
+            "| | |",
+            "| --- | --- |",
+            "| Source | ``$env:SOURCE_REF`` (``$env:MOZLUMI_COMMIT``) |",
+            "| Version | $env:MOZLUMI_VERSION Build $env:MOZLUMI_BUILD (MSI $($props['ProductVersion'])) |",
+            "| Size | $size bytes |",
+            "| SHA-256 | ``$hash`` |",
+            '',
+            "Files: ``$msiName``, ``$msiName.sha256``",
+            ''
+          ) -join "`n"
+          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summary, $utf8)
+          Write-Host "$hash  $msiName ($size bytes)"
+
+      - name: Upload the MSI and its .sha256
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: ${{ runner.temp }}/mozlumi-msi/
+          if-no-files-found: error
+
+  test_x64:
+    name: Tests (x64, dbg)
+    if: ${{ inputs.run_tests }}
+    runs-on: windows-2022
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: false
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Prepare daily dictionary
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\tools\dictionary\prepare_daily_dictionary.ps1
+
+      - name: Try to restore update_deps cache
+        uses: actions/cache@v5
+        with:
+          path: src/third_party_cache
+          key: mozlumi-update_deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/build_tools/update_deps.py') }}
+
+      - name: Install Dependencies
+        shell: cmd
+        working-directory: .\src
+        run: |
+          python build_tools/update_deps.py
+
+      - name: Use Visual Studio 2022
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $install = @(& $vswhere -latest -products '*' -version '[17.0,18.0)' -property installationPath)
+          if ($LASTEXITCODE -ne 0 -or $install.Count -ne 1 -or [string]::IsNullOrWhiteSpace($install[0])) {
+            throw 'Visual Studio 2022 was not found uniquely.'
+          }
+          $vc = Join-Path $install[0].Trim() 'VC'
+          "BAZEL_VC=$vc" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "BAZEL_VC: $vc"
+
+      - name: Run tests
+        shell: cmd
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: |
+          bazelisk test ... -c dbg --build_tests_only
