@@ -1,0 +1,55 @@
+# Copyright 2026 Curren Lumi Project.
+#
+# Mozlumi: the windows of the updaters, in the look of the other Mozlumi
+# windows. Windows: "mozlumi_tool.exe --mode=update_dialog", run by
+# win32/updater/mozlumi_update.ps1. macOS: UpdateDialog.app in Mozlumi.app,
+# run by mac/updater/mozlumi_update.zsh.
+
+load(
+    "//bazel:qt.bzl",
+    "mozc_cc_qt_library",
+    "mozc_macos_qt_application",
+    "mozc_qt_rcc",
+)
+
+package(default_visibility = ["//gui:__subpackages__"])
+
+mozc_qt_rcc(
+    name = "qrc_update_dialog",
+    srcs = [
+        "//data/images:product_icon_32bpp-512.png",
+    ],
+    outs = ["qrc_update_dialog.cc"],
+    qrc_file = "update_dialog.qrc",
+    qrc_name = "qrc_update_dialog",
+)
+
+mozc_cc_qt_library(
+    name = "update_dialog",
+    srcs = [
+        "update_dialog_libmain.cc",
+        ":qrc_update_dialog",
+    ],
+    deps = [
+        "//base:file_util",
+        "//gui/base:gui_base",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+mozc_cc_qt_library(
+    name = "update_dialog_main_lib",
+    srcs = ["update_dialog_main.cc"],
+    deps = [
+        ":update_dialog",
+        "//base:init_mozc",
+    ],
+)
+
+mozc_macos_qt_application(
+    name = "update_dialog_macos",
+    bundle_name = "UpdateDialog",
+    deps = [":update_dialog_main_lib"],
+)

@@ -33,6 +33,7 @@
 #include <windows.h>
 #include <atlbase.h>
 #include <msiquery.h>
+#include <taskschd.h>
 #include <tlhelp32.h>
 #include <wow64apiset.h>
 // clang-format on
@@ -172,8 +173,8 @@ void TerminateMozcProcessByImageName(const wchar_t* image_name,
 
 void ShutdownZenzRuntimeProcesses() {
   TerminateMozcProcessByImageName(
-      L"mozc_zenz_scorer.exe",
-      "mozc_zenz_scorer.exe");
+      L"mozlumi_zenz_scorer.exe",
+      mozc::kMozlumiZenzScorerExeName);
   TerminateMozcProcessByImageName(
       L"llama-server.exe",
       "llama-server.exe");
@@ -353,16 +354,20 @@ struct MozcFirewallRule {
   const char* filename;
 };
 
+// Mozlumi: rule names are separate from Mozkey's "Mozc Offline - ..." rules.
+// AddFirewallRule() deletes rules of the same name first, so sharing the names
+// would remove Mozkey's rules (and uninstalling either would remove both).
 constexpr MozcFirewallRule kMozcOfflineFirewallRules[] = {
-    {L"Mozc Offline - Block mozc_server outbound", "mozc_server.exe"},
-    {L"Mozc Offline - Block mozc_tool outbound", "mozc_tool.exe"},
-    {L"Mozc Offline - Block mozc_renderer outbound", "mozc_renderer.exe"},
-    {L"Mozc Offline - Block mozc_broker outbound", "mozc_broker.exe"},
-    {L"Mozc Offline - Block mozc_cache_service outbound",
-     "mozc_cache_service.exe"},
-    {L"Mozc Offline - Block mozc_zenz_scorer outbound",
-     "mozc_zenz_scorer.exe"},
-    {L"Mozc Offline - Block llama-server outbound", "llama-server.exe"},
+    {L"Mozlumi Offline - Block mozlumi_server outbound", mozc::kMozcServerName},
+    {L"Mozlumi Offline - Block mozlumi_tool outbound", mozc::kMozcTool},
+    {L"Mozlumi Offline - Block mozlumi_renderer outbound",
+     mozc::kMozcRenderer},
+    {L"Mozlumi Offline - Block mozlumi_broker outbound", mozc::kMozcBroker},
+    {L"Mozlumi Offline - Block mozlumi_cache_service outbound",
+     mozc::kMozcCacheServiceExeName},
+    {L"Mozlumi Offline - Block mozlumi_zenz_scorer outbound",
+     mozc::kMozlumiZenzScorerExeName},
+    {L"Mozlumi Offline - Block llama-server outbound", "llama-server.exe"},
 };
 
 void DeleteFirewallRule(std::wstring_view rule_name) {
@@ -629,6 +634,144 @@ UINT __stdcall StopCacheService(MSIHANDLE msi_handle) {
   return ERROR_SUCCESS;
 }
 
+namespace {
+
+// Mozlumi: the scheduled task that starts the updater
+// (win32/updater/mozlumi_update.ps1, through "mozlumi_tool.exe
+// --mode=update_check_auto") for every logged-on user, at logon and every
+// hour. The updater itself checks at most once a day.
+constexpr wchar_t kUpdateTaskFolderName[] = L"Mozlumi";
+constexpr wchar_t kUpdateTaskFolderPath[] = L"\\Mozlumi";
+constexpr wchar_t kUpdateTaskName[] = L"Mozlumi Update Check";
+
+std::wstring EscapeXml(std::wstring_view text) {
+  std::wstring result;
+  for (const wchar_t c : text) {
+    switch (c) {
+      case L'&':
+        result += L"&amp;";
+        break;
+      case L'<':
+        result += L"&lt;";
+        break;
+      case L'>':
+        result += L"&gt;";
+        break;
+      case L'"':
+        result += L"&quot;";
+        break;
+      default:
+        result += c;
+    }
+  }
+  return result;
+}
+
+std::wstring GetUpdateTaskXml() {
+  // S-1-5-32-545: BUILTIN\Users. With a group principal the task runs in the
+  // session of each logged-on member, with the member's own (non-elevated)
+  // rights.
+  return std::wstring(
+             L"<Task version=\"1.2\" "
+             L"xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">"
+             L"<RegistrationInfo>"
+             L"<Author>Curren Lumi Project</Author>"
+             L"<Description>Mozlumi のアップデートを確認します"
+             L"（確認は 1 日 1 回までです）。</Description>"
+             L"</RegistrationInfo>"
+             L"<Triggers>"
+             L"<LogonTrigger>"
+             L"<Enabled>true</Enabled>"
+             L"<Delay>PT2M</Delay>"
+             L"</LogonTrigger>"
+             L"<TimeTrigger>"
+             L"<Repetition><Interval>PT1H</Interval>"
+             L"<StopAtDurationEnd>false</StopAtDurationEnd></Repetition>"
+             L"<StartBoundary>2026-01-01T00:00:00</StartBoundary>"
+             L"<Enabled>true</Enabled>"
+             L"</TimeTrigger>"
+             L"</Triggers>"
+             L"<Principals>"
+             L"<Principal id=\"Author\">"
+             L"<GroupId>S-1-5-32-545</GroupId>"
+             L"<RunLevel>LeastPrivilege</RunLevel>"
+             L"</Principal>"
+             L"</Principals>"
+             L"<Settings>"
+             L"<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"
+             L"<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"
+             L"<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"
+             L"<StartWhenAvailable>true</StartWhenAvailable>"
+             L"<RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>"
+             L"<ExecutionTimeLimit>PT10M</ExecutionTimeLimit>"
+             L"<Priority>7</Priority>"
+             L"</Settings>"
+             L"<Actions Context=\"Author\">"
+             L"<Exec>"
+             L"<Command>") +
+         EscapeXml(GetMozcComponentPath(mozc::kMozcTool)) +
+         L"</Command>"
+         L"<Arguments>--mode=update_check_auto</Arguments>"
+         L"</Exec>"
+         L"</Actions>"
+         L"</Task>";
+}
+
+// Takes a reference: "&" of ATL::CComPtr gives the address of the inner
+// pointer, not of the CComPtr.
+bool ConnectTaskService(ATL::CComPtr<ITaskService>& service) {
+  if (FAILED(service.CoCreateInstance(__uuidof(TaskScheduler), nullptr,
+                                      CLSCTX_INPROC_SERVER))) {
+    return false;
+  }
+  return SUCCEEDED(service->Connect(ATL::CComVariant(), ATL::CComVariant(),
+                                    ATL::CComVariant(), ATL::CComVariant()));
+}
+
+bool RegisterUpdateTaskImpl() {
+  mozc::ScopedCOMInitializer com_initializer;
+  ATL::CComPtr<ITaskService> service;
+  if (!ConnectTaskService(service)) {
+    return false;
+  }
+  ATL::CComPtr<ITaskFolder> folder;
+  if (FAILED(service->GetFolder(ATL::CComBSTR(kUpdateTaskFolderPath),
+                                &folder))) {
+    ATL::CComPtr<ITaskFolder> root;
+    if (FAILED(service->GetFolder(ATL::CComBSTR(L"\\"), &root)) ||
+        FAILED(root->CreateFolder(ATL::CComBSTR(kUpdateTaskFolderName),
+                                  ATL::CComVariant(), &folder))) {
+      return false;
+    }
+  }
+  ATL::CComPtr<IRegisteredTask> task;
+  return SUCCEEDED(folder->RegisterTask(
+      ATL::CComBSTR(kUpdateTaskName),
+      ATL::CComBSTR(GetUpdateTaskXml().c_str()), TASK_CREATE_OR_UPDATE,
+      ATL::CComVariant(), ATL::CComVariant(), TASK_LOGON_GROUP,
+      ATL::CComVariant(), &task));
+}
+
+void UnregisterUpdateTaskImpl() {
+  mozc::ScopedCOMInitializer com_initializer;
+  ATL::CComPtr<ITaskService> service;
+  if (!ConnectTaskService(service)) {
+    return;
+  }
+  ATL::CComPtr<ITaskFolder> folder;
+  if (SUCCEEDED(service->GetFolder(ATL::CComBSTR(kUpdateTaskFolderPath),
+                                   &folder))) {
+    folder->DeleteTask(ATL::CComBSTR(kUpdateTaskName), 0);
+  }
+  ATL::CComPtr<ITaskFolder> root;
+  if (SUCCEEDED(service->GetFolder(ATL::CComBSTR(L"\\"), &root))) {
+    // Fails if another task is in the folder; that is fine.
+    root->DeleteFolder(ATL::CComBSTR(kUpdateTaskFolderName), 0);
+  }
+}
+
+}  // namespace
+
 // [Return='ignore']
 UINT __stdcall InstallMozcFirewallRules(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
@@ -651,6 +794,22 @@ UINT __stdcall RemoveMozcFirewallRules(MSIHANDLE msi_handle) {
   }
 
   // Firewall rule removal is best-effort. Do not block MSI uninstall.
+  return ERROR_SUCCESS;
+}
+
+// Mozlumi: [Return='ignore']
+UINT __stdcall RegisterUpdateTask(MSIHANDLE msi_handle) {
+  DEBUG_BREAK_FOR_DEBUGGER();
+  // Best-effort: without the task, updates can still be checked from the
+  // input menu.
+  RegisterUpdateTaskImpl();
+  return ERROR_SUCCESS;
+}
+
+// Mozlumi: [Return='ignore']
+UINT __stdcall UnregisterUpdateTask(MSIHANDLE msi_handle) {
+  DEBUG_BREAK_FOR_DEBUGGER();
+  UnregisterUpdateTaskImpl();
   return ERROR_SUCCESS;
 }
 

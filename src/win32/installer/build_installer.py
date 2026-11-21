@@ -149,6 +149,7 @@ def run_wix4(args) -> None:
   custom_action = pathlib.Path(args.custom_action).resolve()
 
   zenz_scorer = pathlib.Path(args.zenz_scorer).resolve()
+  mozlumi_update_script = pathlib.Path(args.mozlumi_update_script).resolve()
   zenz_llama_server = pathlib.Path(args.zenz_llama_server).resolve()
   zenz_model = pathlib.Path(args.zenz_model).resolve()
 
@@ -167,10 +168,14 @@ def run_wix4(args) -> None:
         f'Software\\Google\\Update\\ClientState\\{{{omaha_guid}}}'
     )
   elif branding == 'Mozc':
-    upgrade_code = 'DD94B570-B5E2-4100-9D42-61930C611D8A'
+    # Mozlumi: its own UpgradeCode, so that Mozlumi and Mozc/Mozkey are not
+    # treated as versions of the same product.
+    upgrade_code = '584AEC93-7347-4103-AF0D-8C17411BE02F'
 
   # Keep the original Mozc build identity separate from the installer version.
-  msi_version = (version.GetMozkeyMsiVersion() if branding == 'Mozc'
+  # Mozlumi: e.g. 1.3.0.36 for "1.3.0 Build 36" (its own UpgradeCode, so it
+  # need not stay above the Mozc/Mozkey 3.33.x and 101.x MSIs).
+  msi_version = (version.GetMozlumiWindowsVersion() if branding == 'Mozc'
                  else version.GetVersionString())
   omaha_channel_type = 'dev' if version.IsDevChannel() else 'stable'
   vs_configuration_name = 'Debug' if args.debug_build else 'Release'
@@ -199,6 +204,7 @@ def run_wix4(args) -> None:
       '-define', f'MozcToolPath={mozc_tool}',
       '-define', f'CustomActions64Path={custom_action}',
       '-define', f'ZenzScorerPath={zenz_scorer}',
+      '-define', f'MozlumiUpdateScriptPath={mozlumi_update_script}',
       '-define', f'ZenzLlamaServerPath={zenz_llama_server}',
       '-define', f'ZenzModelPath={zenz_model}',
       '-define', f'DocumentsDir={document_dir}',
@@ -230,6 +236,7 @@ def main():
   parser.add_argument('--mozc_cache_service', type=str)
   parser.add_argument('--mozc_tip32', type=str)
   parser.add_argument('--mozc_tip64', type=str)
+  parser.add_argument('--mozlumi_update_script', type=str)
   parser.add_argument('--mozc_tip64arm', type=str)
   parser.add_argument('--mozc_tip64x', type=str)
   parser.add_argument('--custom_action', type=str)

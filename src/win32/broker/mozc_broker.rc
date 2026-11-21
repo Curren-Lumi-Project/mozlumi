@@ -30,21 +30,21 @@ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_INTERNAL_NAME "GoogleIMEJaBroker"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_INTERNAL_NAME "mozc_broker"
+    #define MOZC_RES_INTERNAL_NAME "mozlumi_broker"
   #endif
 #endif
 #ifndef MOZC_RES_ORIGINAL_FILENAME
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_ORIGINAL_FILENAME "GoogleIMEJaBroker.exe"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_ORIGINAL_FILENAME "mozc_broker.exe"
+    #define MOZC_RES_ORIGINAL_FILENAME "mozlumi_broker.exe"
   #endif
 #endif
 #ifndef MOZC_RES_FILE_DESCRIPTION
   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
     #define MOZC_RES_FILE_DESCRIPTION "Google 日本語入力 ブローカー"
   #elif defined(MOZC_BUILD)
-    #define MOZC_RES_FILE_DESCRIPTION "Mozc Broker"
+    #define MOZC_RES_FILE_DESCRIPTION "Mozlumi Broker"
   #endif
 #endif
 #ifndef MOZC_RES_FILETYPE

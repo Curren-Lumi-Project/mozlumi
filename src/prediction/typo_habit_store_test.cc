@@ -90,6 +90,25 @@ TEST(TypoHabitStoreTest, SavesAndLoads) {
   EXPECT_EQ(loaded.Count("s:iu"), 1);
 }
 
+// Mozlumi: saving again must replace the file (std::rename() did not on
+// Windows), and the profile path may contain non-ASCII characters (e.g. a user
+// name in Japanese).
+TEST(TypoHabitStoreTest, SavesRepeatedlyUnderNonAsciiDirectory) {
+  TempDirectory temp_dir = testing::MakeTempDirectoryOrDie();
+  const std::string dir = FileUtil::JoinPath(temp_dir.path(), "もずるみ");
+  ASSERT_TRUE(FileUtil::CreateDirectory(dir).ok());
+  const std::string path = FileUtil::JoinPath(dir, "typo_habits.tsv");
+  {
+    TypoHabitStore store(path);
+    store.Remember("sunkai", "しんかい", "s:iu");
+    ASSERT_TRUE(store.LearnCommitted("sunkai", "しんかい"));
+    // The second save must replace the file written by the first one.
+    ASSERT_TRUE(store.LearnCommitted("sunkai", "しんかい"));
+  }
+  TypoHabitStore loaded(path);
+  EXPECT_EQ(loaded.Count("s:iu"), 2);
+}
+
 }  // namespace
 }  // namespace prediction
 }  // namespace mozc

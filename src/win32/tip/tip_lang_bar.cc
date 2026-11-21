@@ -83,26 +83,26 @@ constexpr GUID kTipLangBarItem_HelpMenu = {
 
 #else  // GOOGLE_JAPANESE_INPUT_BUILD
 
-// {FC8E2486-F5BA-4863-91C3-8D166B454604}
+// {3F91EE57-8A6A-47B8-B5CF-1FD59D079303}
 constexpr GUID kTipLangBarItem_Button = {
-    0xfc8e2486,
-    0xf5ba,
-    0x4863,
-    {0x91, 0xc3, 0x8d, 0x16, 0x6b, 0x45, 0x46, 0x4}};
+    0x3f91ee57,
+    0x8a6a,
+    0x47b8,
+    {0xb5, 0xcf, 0x1f, 0xd5, 0x9d, 0x07, 0x93, 0x03}};
 
-// {1BA637CA-7521-4F21-B51E-6516271A9FE3}
+// {9A182C19-F33C-4693-92DC-FC8C177A9539}
 constexpr GUID kTipLangBarItem_ToolButton = {
-    0x1ba637ca,
-    0x7521,
-    0x4f21,
-    {0xb5, 0x1e, 0x65, 0x16, 0x27, 0x1a, 0x9f, 0xe3}};
+    0x9a182c19,
+    0xf33c,
+    0x4693,
+    {0x92, 0xdc, 0xfc, 0x8c, 0x17, 0x7a, 0x95, 0x39}};
 
-// {F78AD6B1-49D3-400E-8218-896F22A70011}
+// {32AD8F00-1CF3-4B5F-98C7-EDBD35DE2BE4}
 constexpr GUID kTipLangBarItem_HelpMenu = {
-    0xf78ad6b1,
-    0x49d3,
-    0x400e,
-    {0x82, 0x18, 0x89, 0x6f, 0x22, 0xa7, 0x0, 0x11}};
+    0x32ad8f00,
+    0x1cf3,
+    0x4b5f,
+    {0x98, 0xc7, 0xed, 0xbd, 0x35, 0xde, 0x2b, 0xe4}};
 
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
@@ -220,6 +220,8 @@ HRESULT TipLangBar::InitLangBar(TipLangBarCallback* text_service) {
         {kTipLangBarItemTypeSeparator, 0, 0, 0, 0},
         {kTipLangBarItemTypeDefault, TipLangBarCallback::kAbout, IDS_ABOUT, 0,
          0},
+        {kTipLangBarItemTypeDefault, TipLangBarCallback::kUpdateCheck,
+         IDS_UPDATE_CHECK, 0, 0},
         {kTipLangBarItemTypeDefault, TipLangBarCallback::kHelp, IDS_HELP, 0, 0},
     };
 
@@ -279,6 +281,7 @@ HRESULT TipLangBar::InitLangBar(TipLangBarCallback* text_service) {
     // Add the "Help" items to the system language bar help menu.
     const TipLangBarMenuItem kHelpMenu[] = {
         {0, TipLangBarCallback::kAbout, IDS_ABOUT, 0, 0},
+        {0, TipLangBarCallback::kUpdateCheck, IDS_UPDATE_CHECK, 0, 0},
         {0, TipLangBarCallback::kHelp, IDS_HELP, 0, 0},
     };
 

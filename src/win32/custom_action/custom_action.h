@@ -101,6 +101,13 @@ UINT __stdcall InstallMozcFirewallRules(MSIHANDLE msi_handle);
 // Removes outbound Windows Firewall block rules for Mozc runtime executables.
 UINT __stdcall RemoveMozcFirewallRules(MSIHANDLE msi_handle);
 
+// Mozlumi: registers the scheduled task that starts the updater for every
+// logged-on user. Best-effort.
+UINT __stdcall RegisterUpdateTask(MSIHANDLE msi_handle);
+
+// Mozlumi: removes the scheduled task of the updater.
+UINT __stdcall UnregisterUpdateTask(MSIHANDLE msi_handle);
+
 // Writes omaha's ap value for changing the user's channel.
 UINT __stdcall WriteApValue(MSIHANDLE msi_handle);
 

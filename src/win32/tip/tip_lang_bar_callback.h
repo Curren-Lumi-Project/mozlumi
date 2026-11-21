@@ -56,6 +56,8 @@ class TipLangBarCallback : public IUnknown {
     // Help Menu
     kHelp = 30,
     kAbout = 31,
+    // Mozlumi: starts the updater.
+    kUpdateCheck = 32,
 
     // Shortcut commands
     kReconversion = 41,

@@ -297,9 +297,10 @@ namespace mozc {
 namespace gui {
 
 namespace {
-#ifdef __APPLE__
-// Mozlumi: the updater (mac/updater/mozlumi_update.zsh) skips the daily check
-// while this file exists.
+#if defined(__APPLE__) || defined(_WIN32)
+// Mozlumi: the updater (mac/updater/mozlumi_update.zsh,
+// win32/updater/mozlumi_update.ps1) skips the daily check while this file
+// exists.
 std::string UpdateCheckDisabledFilePath() {
   return FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
                             "update_check_disabled");
@@ -317,7 +318,7 @@ void SetUpdateCheckEnabled(bool enabled) {
     FileUtil::SetContents(path, "").IgnoreError();
   }
 }
-#endif  // __APPLE__
+#endif  // __APPLE__ || _WIN32
 
 // Mozlumi: inserts `box` right after `anchor` in the layout that holds it.
 void InsertCheckBoxAfter(QWidget *anchor, QCheckBox *box) {
@@ -739,14 +740,23 @@ ConfigDialog::ConfigDialog()
       aiConversionCheckBox->parentWidget());
   InsertCheckBoxAfter(aiConversionCheckBox, ai_candidate_first_checkbox_);
 
-#ifdef __APPLE__
+#ifdef _WIN32
+  // Mozlumi: Option+Tab is Alt+Tab on Windows, which Windows takes for itself.
+  // The keymaps also bind Ctrl+Tab, so show that key here.
+  aiConversionCheckBox->setText(aiConversionCheckBox->text().replace(
+      QStringLiteral("Option+Tab"), QStringLiteral("Ctrl+Tab")));
+  aiConversionCheckBox->setToolTip(aiConversionCheckBox->toolTip().replace(
+      QStringLiteral("Option+Tab"), QStringLiteral("Ctrl+Tab")));
+#endif  // _WIN32
+
+#if defined(__APPLE__) || defined(_WIN32)
   // Mozlumi: daily update check, next to the other privacy options.
   update_check_checkbox_ = new QCheckBox(
       QString::fromUtf8(
           "Mozlumi のアップデートを1日1回確認する（GitHub に問い合わせます）"),
       presentationModeCheckBox->parentWidget());
   InsertCheckBoxAfter(presentationModeCheckBox, update_check_checkbox_);
-#endif  // __APPLE__
+#endif  // __APPLE__ || _WIN32
 
   // Event handlers to update 'Apply' button state.
   Connect(findChildren<QCheckBox *>(), SIGNAL(stateChanged(int)), this,
@@ -1172,6 +1182,11 @@ bool ConfigDialog::Update() {
     SetUpdateCheckEnabled(update_check_checkbox_->isChecked());
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr) {
+    SetUpdateCheckEnabled(update_check_checkbox_->isChecked());
+  }
+#endif  // _WIN32
 
   base_config_ = config;
   RecordCurrentStateAsApplied();
@@ -2720,9 +2735,9 @@ constexpr int kTsfProfileIconIndexSimpleHighContrast = 17;
 
 constexpr wchar_t kTsfProfileSubKey[] =
     L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}\\"
+    L"{A34DEDAC-0BD6-4171-9032-B264DFE6489B}\\"
     L"LanguageProfile\\0x00000411\\"
-    L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}";
+    L"{B09813B1-1DA5-4779-BED8-39097D25778D}";
 
 bool EndsWithCaseInsensitive(const std::wstring& text,
                              const std::wstring& suffix) {
@@ -2804,7 +2819,7 @@ bool IsTsfProfileIconCurrent(config::Config::WindowsImeIconStyle style) {
 
   return icon_index ==
              static_cast<DWORD>(GetTsfProfileIconIndexForImeIconStyle(style)) &&
-         EndsWithCaseInsensitive(icon_file, L"\\mozc_tip32.dll");
+         EndsWithCaseInsensitive(icon_file, L"\\mozlumi_tip32.dll");
 }
 
 const wchar_t* GetTsfProfileIconStyleFlagValue(
@@ -3046,9 +3061,9 @@ bool RefreshTsfProfileIcon() {
       CLSID mozc_tip_guid = {};
       GUID mozc_profile_guid = {};
       const HRESULT clsid_hr = ::CLSIDFromString(
-          L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}", &mozc_tip_guid);
+          L"{A34DEDAC-0BD6-4171-9032-B264DFE6489B}", &mozc_tip_guid);
       const HRESULT profile_guid_hr = ::CLSIDFromString(
-          L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}", &mozc_profile_guid);
+          L"{B09813B1-1DA5-4779-BED8-39097D25778D}", &mozc_profile_guid);
 
       if (SUCCEEDED(clsid_hr) && SUCCEEDED(profile_guid_hr)) {
         result = RefreshTsfProfileIconViaInstalledInputProcessorProfile(
@@ -6599,6 +6614,11 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
     update_check_checkbox_->setChecked(IsUpdateCheckEnabled());
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr) {
+    update_check_checkbox_->setChecked(IsUpdateCheckEnabled());
+  }
+#endif  // _WIN32
 }
 
 void ConfigDialog::ConvertToProto(config::Config *config) const {
@@ -8349,6 +8369,11 @@ void ConfigDialog::RecordCurrentStateAsApplied() {
     initial_update_check_enabled_ = update_check_checkbox_->isChecked();
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr) {
+    initial_update_check_enabled_ = update_check_checkbox_->isChecked();
+  }
+#endif  // _WIN32
 }
 
 bool ConfigDialog::IsModified() const {
@@ -8380,6 +8405,12 @@ bool ConfigDialog::IsModified() const {
     return true;
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr &&
+      update_check_checkbox_->isChecked() != initial_update_check_enabled_) {
+    return true;
+  }
+#endif  // _WIN32
 
   return false;
 }
