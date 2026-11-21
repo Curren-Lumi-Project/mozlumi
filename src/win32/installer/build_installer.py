@@ -172,7 +172,9 @@ def run_wix4(args) -> None:
     upgrade_code = '584AEC93-7347-4103-AF0D-8C17411BE02F'
 
   # Keep the original Mozc build identity separate from the installer version.
-  msi_version = (version.GetMozkeyMsiVersion() if branding == 'Mozc'
+  # Mozlumi: e.g. 1.3.0.36 for "1.3.0 Build 36" (its own UpgradeCode, so it
+  # need not stay above the Mozc/Mozkey 3.33.x and 101.x MSIs).
+  msi_version = (version.GetMozlumiWindowsVersion() if branding == 'Mozc'
                  else version.GetVersionString())
   omaha_channel_type = 'dev' if version.IsDevChannel() else 'stable'
   vs_configuration_name = 'Debug' if args.debug_build else 'Release'

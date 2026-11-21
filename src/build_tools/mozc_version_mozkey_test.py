@@ -9,7 +9,7 @@ from build_tools import mozc_version
 
 class MozkeyReleaseVersionTest(unittest.TestCase):
 
-  def _read_version(self, major, minor, patch):
+  def _read_version(self, major, minor, patch, mozlumi_build='4'):
     values = {
         'MAJOR': '3',
         'MINOR': '33',
@@ -18,7 +18,7 @@ class MozkeyReleaseVersionTest(unittest.TestCase):
         'MOZKEY_RELEASE_VERSION_MAJOR': str(major),
         'MOZKEY_RELEASE_VERSION_MINOR': str(minor),
         'MOZKEY_RELEASE_VERSION_PATCH': str(patch),
-        'MOZLUMI_BUILD': '4',
+        'MOZLUMI_BUILD': str(mozlumi_build),
         'TARGET_PLATFORM': 'Windows',
         'BUILD_OSS': '6153',
         'QT_VERSION': '6.9.1',
@@ -62,6 +62,24 @@ class MozkeyReleaseVersionTest(unittest.TestCase):
         version = self._read_version(major, minor, patch)
         with self.assertRaises(ValueError):
           version.GetMozkeyMsiVersion()
+
+  def test_mozlumi_windows_version(self):
+    for major, minor, patch, build, expected in [
+        (1, 3, 0, 36, '1.3.0.36'),
+        (1, 3, 0, 37, '1.3.0.37'),
+        (1, 3, 1, 0, '1.3.1.0'),
+        (155, 255, 65535, 65535, '155.255.65535.65535'),
+    ]:
+      with self.subTest(version=(major, minor, patch, build)):
+        version = self._read_version(major, minor, patch, build)
+        self.assertEqual(version.GetMozlumiWindowsVersion(), expected)
+
+  def test_mozlumi_windows_version_invalid_build(self):
+    for build in ['65536', '-1', '036', 'x', '']:
+      with self.subTest(build=build):
+        version = self._read_version(1, 3, 0, build)
+        with self.assertRaises(ValueError):
+          version.GetMozlumiWindowsVersion()
 
 
 if __name__ == '__main__':
