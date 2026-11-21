@@ -49,10 +49,13 @@
 #include <QLabel>
 #include <QPixmap>
 #include <QProgressBar>
+#include <QRect>
+#include <QScreen>
 #include <QPushButton>
 #include <QString>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -69,6 +72,11 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else  // _WIN32
+#include <signal.h>
+#include <sys/types.h>
+
+#include <cerrno>
 #endif  // _WIN32
 
 ABSL_FLAG(std::string, update_dialog_type, "",
@@ -151,7 +159,19 @@ int RunQuestion() {
       new QPushButton(QString::fromUtf8("このバージョンをスキップ"));
   QPushButton *later = new QPushButton(QString::fromUtf8("あとで"));
   QPushButton *update = new QPushButton(QString::fromUtf8("更新する"));
+  // "Update" is the main choice: focused, default and in the Mozlumi orange.
+  // "Skip" is plain so that it does not stand out.
+  skip->setFlat(true);
+  skip->setAutoDefault(false);
+  later->setAutoDefault(false);
   update->setDefault(true);
+  update->setStyleSheet(QStringLiteral(
+      "QPushButton { background-color: #F39800; color: #1A1A1A;"
+      " border: 1px solid #C77A00; border-radius: 4px; padding: 6px 18px;"
+      " font-weight: bold; }"
+      "QPushButton:hover { background-color: #FFA92E; }"
+      "QPushButton:pressed { background-color: #D98700; }"
+      "QPushButton:focus { border: 2px solid #8A4F00; }"));
   buttons->addWidget(skip);
   buttons->addStretch(1);
   buttons->addWidget(later);
@@ -168,6 +188,7 @@ int RunQuestion() {
   dialog.adjustSize();
   dialog.raise();
   dialog.activateWindow();
+  update->setFocus();
   const int result = dialog.exec();
   // Closing the window (or Esc) means "later".
   return (result == kExitUpdate || result == kExitSkip) ? result : kExitLater;
@@ -228,6 +249,9 @@ int RunProgress() {
         SYNCHRONIZE, FALSE,
         static_cast<DWORD>(absl::GetFlag(FLAGS_update_parent_pid)));
   }
+#else   // _WIN32
+  const pid_t parent_pid =
+      static_cast<pid_t>(absl::GetFlag(FLAGS_update_parent_pid));
 #endif  // _WIN32
 
   ProgressDialog dialog;
@@ -262,6 +286,11 @@ int RunProgress() {
       dialog.Finish();
       return;
     }
+#else   // _WIN32
+    if (parent_pid > 0 && ::kill(parent_pid, 0) != 0 && errno == ESRCH) {
+      dialog.Finish();
+      return;
+    }
 #endif  // _WIN32
     // The updater replaces the file as a whole; a failed read is retried.
     const absl::StatusOr<std::string> content = FileUtil::GetContents(path);
@@ -276,8 +305,11 @@ int RunProgress() {
     }
     const std::pair<absl::string_view, absl::string_view> parts =
         absl::StrSplit(line, absl::MaxSplits('\t', 1));
+    // Accept "0,5" too, in case a locale writes a decimal comma.
+    std::string number(parts.first);
+    std::replace(number.begin(), number.end(), ',', '.');
     double fraction = -1;
-    if (!absl::SimpleAtod(parts.first, &fraction)) {
+    if (!absl::SimpleAtod(number, &fraction)) {
       return;
     }
     label->setText(QString::fromUtf8(parts.second.data(),
@@ -292,6 +324,13 @@ int RunProgress() {
   timer.start(200);
 
   dialog.adjustSize();
+  // Above the center, so that the administrator prompt does not cover it.
+  if (const QScreen *screen = QGuiApplication::primaryScreen()) {
+    const QRect area = screen->availableGeometry();
+    dialog.move(area.center().x() - dialog.width() / 2,
+                std::max(area.top(),
+                         area.center().y() - dialog.height() / 2 - 160));
+  }
   dialog.raise();
   dialog.exec();
 #ifdef _WIN32

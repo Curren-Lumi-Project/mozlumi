@@ -58,6 +58,10 @@ readonly DISABLED_FILE="${STATE_DIR}/update_check_disabled"
 readonly LAST_CHECK_FILE="${STATE_DIR}/update_last_check"
 readonly SKIP_FILE="${STATE_DIR}/update_skipped_version"
 readonly LOCK_DIR="${STATE_DIR}/update.lock"
+# Mozlumi's windows for the updater, in the look of the other Mozlumi windows
+# (gui/update_dialog). If it cannot be run, the standard macOS windows are
+# used instead, so that an update never stops because of a window.
+readonly UPDATE_DIALOG="${APP}/Contents/Resources/UpdateDialog.app/Contents/MacOS/UpdateDialog"
 
 typeset -g MODE='--manual'
 typeset -g WORK_DIR=''
@@ -77,6 +81,26 @@ dialog() {
   local message=$1
   shift
   progress_stop
+  if [[ -x "${UPDATE_DIALOG}" ]]; then
+    # In --update_dialog_text, "\n" (a backslash and "n") is a line break.
+    local text=${message//$'\n'/\\n}
+    if (( $# == 1 )); then
+      if "${UPDATE_DIALOG}" --update_dialog_type=message \
+          "--update_dialog_text=${text}" >/dev/null 2>&1; then
+        print -r -- "$1"
+        return 0
+      fi
+    elif [[ "$*" == 'このバージョンをスキップ あとで 更新する' ]]; then
+      "${UPDATE_DIALOG}" --update_dialog_type=question \
+          "--update_dialog_text=${text}" >/dev/null 2>&1
+      # Exit codes: must match gui/update_dialog.
+      case $? in
+        10) print -r -- '更新する'; return 0 ;;
+        11) print -r -- 'あとで'; return 0 ;;
+        12) print -r -- 'このバージョンをスキップ'; return 0 ;;
+      esac
+    fi
+  fi
   /usr/bin/osascript - "${message}" "$@" <<'APPLESCRIPT' 2>/dev/null
 on run argv
   set theMessage to item 1 of argv
@@ -99,6 +123,13 @@ APPLESCRIPT
 progress_start() {
   PROGRESS_FILE="${WORK_DIR}/progress"
   print -r -- $'-1\t準備中…' > "${PROGRESS_FILE}"
+  if [[ -x "${UPDATE_DIALOG}" ]]; then
+    "${UPDATE_DIALOG}" --update_dialog_type=progress \
+        "--update_progress_file=${PROGRESS_FILE}" \
+        "--update_parent_pid=$$" >/dev/null 2>&1 &
+    PROGRESS_PID=$!
+    return 0
+  fi
   /usr/bin/osascript -l JavaScript - "${PROGRESS_FILE}" <<'JAVASCRIPT' >/dev/null 2>&1 &
 ObjC.import('Cocoa');
 function run(argv) {
