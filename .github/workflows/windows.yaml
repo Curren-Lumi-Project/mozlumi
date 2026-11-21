@@ -1,8 +1,10 @@
 name: CI for Windows
 # https://github.com/google/mozc/blob/master/docs/build_mozc_in_windows.md
 
-# Run on push.
-on: push
+# Mozlumi: run by hand only. This upstream CI is not used for Mozlumi
+# (Windows builds use mozlumi-windows-build.yml). The file is kept because
+# tools/zenz_runtime/runtime_lock.py checks the EXPECTED_LLAMA_SHA256 pin here.
+on: workflow_dispatch
 
 permissions:
   contents: read
