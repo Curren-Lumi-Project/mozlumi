@@ -739,6 +739,15 @@ ConfigDialog::ConfigDialog()
       aiConversionCheckBox->parentWidget());
   InsertCheckBoxAfter(aiConversionCheckBox, ai_candidate_first_checkbox_);
 
+#ifdef _WIN32
+  // Mozlumi: Option+Tab is Alt+Tab on Windows, which Windows takes for itself.
+  // The keymaps also bind Ctrl+Tab, so show that key here.
+  aiConversionCheckBox->setText(aiConversionCheckBox->text().replace(
+      QStringLiteral("Option+Tab"), QStringLiteral("Ctrl+Tab")));
+  aiConversionCheckBox->setToolTip(aiConversionCheckBox->toolTip().replace(
+      QStringLiteral("Option+Tab"), QStringLiteral("Ctrl+Tab")));
+#endif  // _WIN32
+
 #ifdef __APPLE__
   // Mozlumi: daily update check, next to the other privacy options.
   update_check_checkbox_ = new QCheckBox(
