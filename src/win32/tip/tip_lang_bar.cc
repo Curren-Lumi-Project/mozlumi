@@ -220,6 +220,8 @@ HRESULT TipLangBar::InitLangBar(TipLangBarCallback* text_service) {
         {kTipLangBarItemTypeSeparator, 0, 0, 0, 0},
         {kTipLangBarItemTypeDefault, TipLangBarCallback::kAbout, IDS_ABOUT, 0,
          0},
+        {kTipLangBarItemTypeDefault, TipLangBarCallback::kUpdateCheck,
+         IDS_UPDATE_CHECK, 0, 0},
         {kTipLangBarItemTypeDefault, TipLangBarCallback::kHelp, IDS_HELP, 0, 0},
     };
 
@@ -279,6 +281,7 @@ HRESULT TipLangBar::InitLangBar(TipLangBarCallback* text_service) {
     // Add the "Help" items to the system language bar help menu.
     const TipLangBarMenuItem kHelpMenu[] = {
         {0, TipLangBarCallback::kAbout, IDS_ABOUT, 0, 0},
+        {0, TipLangBarCallback::kUpdateCheck, IDS_UPDATE_CHECK, 0, 0},
         {0, TipLangBarCallback::kHelp, IDS_HELP, 0, 0},
     };
 

@@ -166,6 +166,7 @@ BEGIN
 #else
     IDS_ABOUT               "Mozlumi について"
 #endif
+    IDS_UPDATE_CHECK        "アップデートを確認"
     IDS_FULL_KATAKANA       "全角カタカナ"
     IDS_HALF_ALPHANUMERIC   "半角英数"
     IDS_FULL_ALPHANUMERIC   "全角英数"
@@ -209,6 +210,7 @@ BEGIN
 #else
     IDS_ABOUT               "About Mozlumi"
 #endif
+    IDS_UPDATE_CHECK        "Check for Updates"
     IDS_FULL_KATAKANA       "Full-width Katakana"
     IDS_HALF_ALPHANUMERIC   "Half-width Alphanumeric"
     IDS_FULL_ALPHANUMERIC   "Full-width Alphanumeric"

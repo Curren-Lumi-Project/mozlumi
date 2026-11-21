@@ -33,6 +33,7 @@
 #include <windows.h>
 #include <atlbase.h>
 #include <msiquery.h>
+#include <taskschd.h>
 #include <tlhelp32.h>
 #include <wow64apiset.h>
 // clang-format on
@@ -633,6 +634,139 @@ UINT __stdcall StopCacheService(MSIHANDLE msi_handle) {
   return ERROR_SUCCESS;
 }
 
+namespace {
+
+// Mozlumi: the scheduled task that starts the updater
+// (win32/updater/mozlumi_update.ps1, through "mozlumi_tool.exe
+// --mode=update_check_auto") for every logged-on user, at logon and every
+// hour. The updater itself checks at most once a day.
+constexpr wchar_t kUpdateTaskFolderName[] = L"Mozlumi";
+constexpr wchar_t kUpdateTaskFolderPath[] = L"\\Mozlumi";
+constexpr wchar_t kUpdateTaskName[] = L"Mozlumi Update Check";
+
+std::wstring EscapeXml(std::wstring_view text) {
+  std::wstring result;
+  for (const wchar_t c : text) {
+    switch (c) {
+      case L'&':
+        result += L"&amp;";
+        break;
+      case L'<':
+        result += L"&lt;";
+        break;
+      case L'>':
+        result += L"&gt;";
+        break;
+      case L'"':
+        result += L"&quot;";
+        break;
+      default:
+        result += c;
+    }
+  }
+  return result;
+}
+
+std::wstring GetUpdateTaskXml() {
+  // S-1-5-32-545: BUILTIN\Users. With a group principal the task runs in the
+  // session of each logged-on member, with the member's own (non-elevated)
+  // rights.
+  return std::wstring(
+             L"<Task version=\"1.2\" "
+             L"xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">"
+             L"<RegistrationInfo>"
+             L"<Author>Curren Lumi Project</Author>"
+             L"<Description>Mozlumi のアップデートを確認します"
+             L"（確認は 1 日 1 回までです）。</Description>"
+             L"</RegistrationInfo>"
+             L"<Triggers>"
+             L"<LogonTrigger>"
+             L"<Enabled>true</Enabled>"
+             L"<Delay>PT2M</Delay>"
+             L"</LogonTrigger>"
+             L"<TimeTrigger>"
+             L"<Repetition><Interval>PT1H</Interval>"
+             L"<StopAtDurationEnd>false</StopAtDurationEnd></Repetition>"
+             L"<StartBoundary>2026-01-01T00:00:00</StartBoundary>"
+             L"<Enabled>true</Enabled>"
+             L"</TimeTrigger>"
+             L"</Triggers>"
+             L"<Principals>"
+             L"<Principal id=\"Author\">"
+             L"<GroupId>S-1-5-32-545</GroupId>"
+             L"<RunLevel>LeastPrivilege</RunLevel>"
+             L"</Principal>"
+             L"</Principals>"
+             L"<Settings>"
+             L"<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"
+             L"<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"
+             L"<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"
+             L"<StartWhenAvailable>true</StartWhenAvailable>"
+             L"<RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>"
+             L"<ExecutionTimeLimit>PT10M</ExecutionTimeLimit>"
+             L"<Priority>7</Priority>"
+             L"</Settings>"
+             L"<Actions Context=\"Author\">"
+             L"<Exec>"
+             L"<Command>") +
+         EscapeXml(GetMozcComponentPath(mozc::kMozcTool)) +
+         L"</Command>"
+         L"<Arguments>--mode=update_check_auto</Arguments>"
+         L"</Exec>"
+         L"</Actions>"
+         L"</Task>";
+}
+
+bool ConnectTaskService(CComPtr<ITaskService>* service) {
+  if (FAILED(service->CoCreateInstance(__uuidof(TaskScheduler), nullptr,
+                                       CLSCTX_INPROC_SERVER))) {
+    return false;
+  }
+  return SUCCEEDED((*service)->Connect(CComVariant(), CComVariant(),
+                                       CComVariant(), CComVariant()));
+}
+
+bool RegisterUpdateTaskImpl() {
+  mozc::ScopedCOMInitializer com_initializer;
+  CComPtr<ITaskService> service;
+  if (!ConnectTaskService(&service)) {
+    return false;
+  }
+  CComPtr<ITaskFolder> folder;
+  if (FAILED(service->GetFolder(CComBSTR(kUpdateTaskFolderPath), &folder))) {
+    CComPtr<ITaskFolder> root;
+    if (FAILED(service->GetFolder(CComBSTR(L"\\"), &root)) ||
+        FAILED(root->CreateFolder(CComBSTR(kUpdateTaskFolderName),
+                                  CComVariant(), &folder))) {
+      return false;
+    }
+  }
+  CComPtr<IRegisteredTask> task;
+  return SUCCEEDED(folder->RegisterTask(
+      CComBSTR(kUpdateTaskName), CComBSTR(GetUpdateTaskXml().c_str()),
+      TASK_CREATE_OR_UPDATE, CComVariant(), CComVariant(), TASK_LOGON_GROUP,
+      CComVariant(), &task));
+}
+
+void UnregisterUpdateTaskImpl() {
+  mozc::ScopedCOMInitializer com_initializer;
+  CComPtr<ITaskService> service;
+  if (!ConnectTaskService(&service)) {
+    return;
+  }
+  CComPtr<ITaskFolder> folder;
+  if (SUCCEEDED(service->GetFolder(CComBSTR(kUpdateTaskFolderPath), &folder))) {
+    folder->DeleteTask(CComBSTR(kUpdateTaskName), 0);
+  }
+  CComPtr<ITaskFolder> root;
+  if (SUCCEEDED(service->GetFolder(CComBSTR(L"\\"), &root))) {
+    // Fails if another task is in the folder; that is fine.
+    root->DeleteFolder(CComBSTR(kUpdateTaskFolderName), 0);
+  }
+}
+
+}  // namespace
+
 // [Return='ignore']
 UINT __stdcall InstallMozcFirewallRules(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
@@ -655,6 +789,22 @@ UINT __stdcall RemoveMozcFirewallRules(MSIHANDLE msi_handle) {
   }
 
   // Firewall rule removal is best-effort. Do not block MSI uninstall.
+  return ERROR_SUCCESS;
+}
+
+// Mozlumi: [Return='ignore']
+UINT __stdcall RegisterUpdateTask(MSIHANDLE msi_handle) {
+  DEBUG_BREAK_FOR_DEBUGGER();
+  // Best-effort: without the task, updates can still be checked from the
+  // input menu.
+  RegisterUpdateTaskImpl();
+  return ERROR_SUCCESS;
+}
+
+// Mozlumi: [Return='ignore']
+UINT __stdcall UnregisterUpdateTask(MSIHANDLE msi_handle) {
+  DEBUG_BREAK_FOR_DEBUGGER();
+  UnregisterUpdateTaskImpl();
   return ERROR_SUCCESS;
 }
 

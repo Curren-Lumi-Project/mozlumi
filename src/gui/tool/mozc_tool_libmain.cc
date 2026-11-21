@@ -54,6 +54,13 @@
 #ifdef _WIN32
 #include <windows.h>
 
+#include <chrono>
+#include <filesystem>
+
+#include "absl/status/statusor.h"
+#include "base/file_util.h"
+#include "base/system_util.h"
+#include "base/win32/wide_char.h"
 #include "gui/base/win_util.h"
 #endif  // _WIN32
 
@@ -232,6 +239,64 @@ int RunTsfProfileIconStyleUpdate() {
   return 0;
 }
 
+// Mozlumi: starts the updater (win32/updater/mozlumi_update.ps1, installed
+// next to this tool) without a console window and returns at once. The
+// updater shows its own windows. "Auto" is started by the scheduled task
+// every hour; it checks at most once a day, so the same conditions are
+// checked here first to avoid starting PowerShell for nothing.
+int RunUpdateCheck(bool auto_mode) {
+  if (auto_mode) {
+    const std::string profile_dir = mozc::SystemUtil::GetUserProfileDirectory();
+    if (mozc::FileUtil::FileExists(
+            mozc::FileUtil::JoinPath(profile_dir, "update_check_disabled"))
+            .ok()) {
+      return 0;
+    }
+    // GetModificationTime() returns the ticks of the file time clock.
+    using FileClock = std::filesystem::file_time_type::clock;
+    const absl::StatusOr<mozc::FileTimeStamp> last_check =
+        mozc::FileUtil::GetModificationTime(
+            mozc::FileUtil::JoinPath(profile_dir, "update_last_check"));
+    const mozc::FileTimeStamp now =
+        static_cast<mozc::FileTimeStamp>(FileClock::now().time_since_epoch().count());
+    const mozc::FileTimeStamp one_day = static_cast<mozc::FileTimeStamp>(
+        std::chrono::duration_cast<FileClock::duration>(std::chrono::hours(24))
+            .count());
+    if (last_check.ok() && *last_check <= now && now - *last_check < one_day) {
+      return 0;
+    }
+  }
+
+  wchar_t system_dir[MAX_PATH] = {};
+  const UINT length = ::GetSystemDirectoryW(system_dir, MAX_PATH);
+  if (length == 0 || length >= MAX_PATH) {
+    return 1;
+  }
+  const std::wstring powershell =
+      std::wstring(system_dir) + L"\\WindowsPowerShell\\v1.0\\powershell.exe";
+  const std::wstring script = mozc::win32::Utf8ToWide(mozc::FileUtil::JoinPath(
+      mozc::SystemUtil::GetServerDirectory(), "mozlumi_update.ps1"));
+  std::wstring command_line = L"\"" + powershell +
+                              L"\" -NoProfile -NonInteractive "
+                              L"-ExecutionPolicy Bypass -WindowStyle Hidden "
+                              L"-File \"" +
+                              script + L"\" -Mode " +
+                              (auto_mode ? L"Auto" : L"Manual");
+
+  STARTUPINFOW startup_info = {};
+  startup_info.cb = sizeof(startup_info);
+  PROCESS_INFORMATION process_info = {};
+  if (!::CreateProcessW(powershell.c_str(), command_line.data(), nullptr,
+                        nullptr, FALSE, CREATE_NO_WINDOW, nullptr, system_dir,
+                        &startup_info, &process_info)) {
+    LOG(ERROR) << "CreateProcessW failed: " << ::GetLastError();
+    return 1;
+  }
+  ::CloseHandle(process_info.hThread);
+  ::CloseHandle(process_info.hProcess);
+  return 0;
+}
+
 }  // namespace
 #endif  // _WIN32
 
@@ -293,6 +358,17 @@ int RunMozcTool(int argc, char *argv[]) {
       !mozc::RunLevel::IsValidClientRunLevel()) {
     return -1;
   }
+
+#ifdef _WIN32
+  // Mozlumi: the updater. "update_check" is from the input menu,
+  // "update_check_auto" from the scheduled task.
+  if (absl::GetFlag(FLAGS_mode) == "update_check") {
+    return RunUpdateCheck(/*auto_mode=*/false);
+  }
+  if (absl::GetFlag(FLAGS_mode) == "update_check_auto") {
+    return RunUpdateCheck(/*auto_mode=*/true);
+  }
+#endif  // _WIN32
 
   // install Qt debug handler
   qInstallMessageHandler(mozc::gui::DebugUtil::MessageHandler);

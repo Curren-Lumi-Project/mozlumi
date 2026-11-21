@@ -149,6 +149,7 @@ def run_wix4(args) -> None:
   custom_action = pathlib.Path(args.custom_action).resolve()
 
   zenz_scorer = pathlib.Path(args.zenz_scorer).resolve()
+  mozlumi_update_script = pathlib.Path(args.mozlumi_update_script).resolve()
   zenz_llama_server = pathlib.Path(args.zenz_llama_server).resolve()
   zenz_model = pathlib.Path(args.zenz_model).resolve()
 
@@ -203,6 +204,7 @@ def run_wix4(args) -> None:
       '-define', f'MozcToolPath={mozc_tool}',
       '-define', f'CustomActions64Path={custom_action}',
       '-define', f'ZenzScorerPath={zenz_scorer}',
+      '-define', f'MozlumiUpdateScriptPath={mozlumi_update_script}',
       '-define', f'ZenzLlamaServerPath={zenz_llama_server}',
       '-define', f'ZenzModelPath={zenz_model}',
       '-define', f'DocumentsDir={document_dir}',
@@ -234,6 +236,7 @@ def main():
   parser.add_argument('--mozc_cache_service', type=str)
   parser.add_argument('--mozc_tip32', type=str)
   parser.add_argument('--mozc_tip64', type=str)
+  parser.add_argument('--mozlumi_update_script', type=str)
   parser.add_argument('--mozc_tip64arm', type=str)
   parser.add_argument('--mozc_tip64x', type=str)
   parser.add_argument('--custom_action', type=str)

@@ -90,7 +90,10 @@ mozc_cc_qt_library(
             "//base:file_util",
         ],
         windows = [
+            "//base:file_util",
+            "//base/win32:wide_char",
             "//gui/base:win_util",
+            "@com_google_absl//absl/status:statusor",
         ],
     ),
 )

@@ -157,6 +157,7 @@
       <ComponentRef Id="MozcCacheService" />
       <ComponentRef Id="MozcRenderer" />
       <ComponentRef Id="MozcTool" />
+      <ComponentRef Id="MozlumiUpdater" />
       <?if $(var.VSConfigurationName) = "Release" ?>
         <ComponentRef Id="msvcp140" />
         <ComponentRef Id="msvcp140_1" />
@@ -208,6 +209,10 @@
     <CustomAction Id="InstallMozcFirewallRules" DllEntry="InstallMozcFirewallRules" Execute="deferred" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="InstallMozcFirewallRulesRollback" DllEntry="RemoveMozcFirewallRules" Execute="rollback" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="RemoveMozcFirewallRules" DllEntry="RemoveMozcFirewallRules" Execute="deferred" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
+    <!-- Mozlumi: the scheduled task of the updater. -->
+    <CustomAction Id="RegisterUpdateTask" DllEntry="RegisterUpdateTask" Execute="deferred" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
+    <CustomAction Id="RegisterUpdateTaskRollback" DllEntry="UnregisterUpdateTask" Execute="rollback" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
+    <CustomAction Id="UnregisterUpdateTask" DllEntry="UnregisterUpdateTask" Execute="deferred" Impersonate="no" Return="ignore" BinaryRef="mozc_installer_helper.dll" />
     <CustomAction Id="NewerVersionError" Error="4000" />
 
     <InstallExecuteSequence>
@@ -221,6 +226,11 @@
       <Custom Action="UnregisterTIPRollback64" After="RestoreUserIMEEnvironment" Condition="(REMOVE=&quot;ALL&quot;) AND UPGRADINGPRODUCTCODE AND (VersionNT64)" />
       <Custom Action="UnregisterTIP64" After="UnregisterTIPRollback64" Condition="(REMOVE=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE) AND (VersionNT64)" />
       <Custom Action="RemoveMozcFirewallRules" After="UnregisterTIP64" Condition="(REMOVE=&quot;ALL&quot;)" />
+      <!--
+        Mozlumi: on upgrade, the old product's UnregisterUpdateTask runs in
+        RemoveExistingProducts, before the new product's RegisterUpdateTask.
+      -->
+      <Custom Action="UnregisterUpdateTask" After="RemoveMozcFirewallRules" Condition="(REMOVE=&quot;ALL&quot;)" />
       <!--
         The InstallValidate action notifies the user
         if mozc_server.exe and mozc_renderer.exe
@@ -253,6 +263,8 @@
       <Custom Action="EnsureAllApplicationPackagesPermisssions" Before="InstallMozcFirewallRulesRollback" Condition="(NOT (REMOVE=&quot;ALL&quot;))" />
       <Custom Action="InstallMozcFirewallRulesRollback" Before="InstallMozcFirewallRules" Condition="(NOT (REMOVE=&quot;ALL&quot;))" />
       <Custom Action="InstallMozcFirewallRules" Before="InitialInstallationCommit" Condition="(NOT (REMOVE=&quot;ALL&quot;))" />
+      <Custom Action="RegisterUpdateTaskRollback" After="InstallMozcFirewallRules" Condition="(NOT (REMOVE=&quot;ALL&quot;))" />
+      <Custom Action="RegisterUpdateTask" After="RegisterUpdateTaskRollback" Condition="(NOT (REMOVE=&quot;ALL&quot;))" />
       <Custom Action="InitialInstallationCommit" Before="FixupConfigFilePermission" Condition="(NOT (REMOVE=&quot;ALL&quot;)) AND (NOT UPGRADING)" />
       <Custom Action="FixupConfigFilePermission" Before="EnableTipProfile" Condition="NOT (REMOVE=&quot;ALL&quot;)" />
       <Custom Action="EnableTipProfile" Before="InstallFinalize" Condition="NOT (REMOVE=&quot;ALL&quot;)" />
@@ -315,6 +327,11 @@
         </Component>
         <Component Id="MozcTool">
           <File Id="mozc_tool.exe" Name="mozlumi_tool.exe" DiskId="1" Checksum="yes" Source="$(var.MozcToolPath)" Vital="yes" KeyPath="yes" />
+        </Component>
+
+        <!-- Mozlumi: the updater, started by mozlumi_tool.exe. -->
+        <Component Id="MozlumiUpdater">
+          <File Id="mozlumi_update_ps1" Name="mozlumi_update.ps1" DiskId="1" Source="$(var.MozlumiUpdateScriptPath)" Vital="yes" KeyPath="yes" />
         </Component>
 
         <Component Id="ZenzScorer">
