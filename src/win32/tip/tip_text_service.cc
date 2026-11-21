@@ -277,6 +277,9 @@ std::string GetMozcToolCommand(TipLangBarCallback::ItemId menu_id) {
     case TipLangBarCallback::kAbout:
       // Open the about dialog.
       return "about_dialog";
+    case TipLangBarCallback::kUpdateCheck:
+      // Mozlumi: start the updater.
+      return "update_check";
     default:
       DLOG(FATAL) << "Unexpected item id: " << menu_id;
       return "";
@@ -996,6 +999,7 @@ class TipTextServiceImpl
       case TipLangBarCallback::kDictionary:
       case TipLangBarCallback::kWordRegister:
       case TipLangBarCallback::kAbout:
+      case TipLangBarCallback::kUpdateCheck:
         return SpawnTool(GetMozcToolCommand(menu_id));
       case TipLangBarCallback::kHelp:
         // Open the about dialog.

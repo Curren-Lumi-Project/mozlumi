@@ -297,9 +297,10 @@ namespace mozc {
 namespace gui {
 
 namespace {
-#ifdef __APPLE__
-// Mozlumi: the updater (mac/updater/mozlumi_update.zsh) skips the daily check
-// while this file exists.
+#if defined(__APPLE__) || defined(_WIN32)
+// Mozlumi: the updater (mac/updater/mozlumi_update.zsh,
+// win32/updater/mozlumi_update.ps1) skips the daily check while this file
+// exists.
 std::string UpdateCheckDisabledFilePath() {
   return FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
                             "update_check_disabled");
@@ -317,7 +318,7 @@ void SetUpdateCheckEnabled(bool enabled) {
     FileUtil::SetContents(path, "").IgnoreError();
   }
 }
-#endif  // __APPLE__
+#endif  // __APPLE__ || _WIN32
 
 // Mozlumi: inserts `box` right after `anchor` in the layout that holds it.
 void InsertCheckBoxAfter(QWidget *anchor, QCheckBox *box) {
@@ -748,14 +749,14 @@ ConfigDialog::ConfigDialog()
       QStringLiteral("Option+Tab"), QStringLiteral("Ctrl+Tab")));
 #endif  // _WIN32
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(_WIN32)
   // Mozlumi: daily update check, next to the other privacy options.
   update_check_checkbox_ = new QCheckBox(
       QString::fromUtf8(
           "Mozlumi のアップデートを1日1回確認する（GitHub に問い合わせます）"),
       presentationModeCheckBox->parentWidget());
   InsertCheckBoxAfter(presentationModeCheckBox, update_check_checkbox_);
-#endif  // __APPLE__
+#endif  // __APPLE__ || _WIN32
 
   // Event handlers to update 'Apply' button state.
   Connect(findChildren<QCheckBox *>(), SIGNAL(stateChanged(int)), this,
@@ -1181,6 +1182,11 @@ bool ConfigDialog::Update() {
     SetUpdateCheckEnabled(update_check_checkbox_->isChecked());
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr) {
+    SetUpdateCheckEnabled(update_check_checkbox_->isChecked());
+  }
+#endif  // _WIN32
 
   base_config_ = config;
   RecordCurrentStateAsApplied();
@@ -6608,6 +6614,11 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
     update_check_checkbox_->setChecked(IsUpdateCheckEnabled());
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr) {
+    update_check_checkbox_->setChecked(IsUpdateCheckEnabled());
+  }
+#endif  // _WIN32
 }
 
 void ConfigDialog::ConvertToProto(config::Config *config) const {
@@ -8358,6 +8369,11 @@ void ConfigDialog::RecordCurrentStateAsApplied() {
     initial_update_check_enabled_ = update_check_checkbox_->isChecked();
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr) {
+    initial_update_check_enabled_ = update_check_checkbox_->isChecked();
+  }
+#endif  // _WIN32
 }
 
 bool ConfigDialog::IsModified() const {
@@ -8389,6 +8405,12 @@ bool ConfigDialog::IsModified() const {
     return true;
   }
 #endif  // __APPLE__
+#ifdef _WIN32
+  if (update_check_checkbox_ != nullptr &&
+      update_check_checkbox_->isChecked() != initial_update_check_enabled_) {
+    return true;
+  }
+#endif  // _WIN32
 
   return false;
 }
