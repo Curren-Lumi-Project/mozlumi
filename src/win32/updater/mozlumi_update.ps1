@@ -73,6 +73,9 @@ $Manufacturer = 'Curren Lumi Project'
 $InstallDir = Join-Path ${env:ProgramFiles(x86)} 'Mozlumi'
 $ToolPath = Join-Path $InstallDir 'mozlumi_tool.exe'
 $TagPattern = '^v([0-9]+)\.([0-9]+)\.([0-9]+)-build([0-9]+)$'
+# The detailed log of the last installation by the updater. It stays on this
+# computer (the user's temporary folder) and is overwritten each time.
+$InstallLogPath = Join-Path ([IO.Path]::GetTempPath()) 'Mozlumi_update_install.log'
 
 # Exit codes of the administrator step (also used by the Mac updater).
 $ExitBadRequest = 70
@@ -208,8 +211,8 @@ function Invoke-Install {
     # installer replaces files in it.
     Set-Location -LiteralPath $env:SystemRoot
     $msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
-    $process = Start-Process -FilePath $msiexec `
-        -ArgumentList ('/i "' + $copy + '" /norestart') -Wait -PassThru
+    $process = Start-Process -FilePath $msiexec -Wait -PassThru -ArgumentList (
+        '/i "' + $copy + '" /norestart /l*v "' + $InstallLogPath + '"')
     return $process.ExitCode
   } finally {
     Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
@@ -746,7 +749,8 @@ function Invoke-Check {
         return 1
       }
       default {
-        Show-Message ("更新に失敗しました。（コード {0}）" -f $process.ExitCode)
+        Show-Message (("更新に失敗しました。（コード {0}）`n`n" +
+            'インストールの詳しい記録: {1}') -f $process.ExitCode, $InstallLogPath)
         return 1
       }
     }
