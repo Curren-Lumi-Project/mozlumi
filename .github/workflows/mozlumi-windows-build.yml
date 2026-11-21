@@ -10,6 +10,17 @@ name: Mozlumi Windows build (manual)
 # - 道具：x64 の LLVM は update_deps.py の 20.1.1。本家 Mozkey は、Clang 20.1.1
 #   のソースを Visual Studio 2022（windows-2022）でビルドしている（e7082626）。
 #   ここも同じにする。LLVM を 22 系に上げたら、windows-2025 への切り替えを考えること。
+#
+# 長いビルドを無駄にしないための仕組み:
+# - MSI を確かめて名前を付ける処理は .github/scripts/mozlumi_check_msi.ps1 に
+#   ある。変えたら、先に Windows マシンで手元の MSI に対して動かして確かめる。
+#   このスクリプトは「ref」ではなく、このワークフローと同じコミット（main）から使う。
+# - MSI ができたあとの手順で失敗したら、MSI が「unchecked-Mozlumi64-msi」として
+#   残る。直してから「reuse_msi_run」にその実行の番号（実行ページの URL の
+#   /actions/runs/ のあとの数字）を入れて動かすと、ビルドせずに確認からやり直せる。
+#   「ref」は前回と同じものを入れる（ビルド元のコミットが違うと止まる）。
+# - Qt のビルド結果はキャッシュに残し、build_qt.py と update_deps.py が
+#   変わらない限り使い回す。
 
 on:
   workflow_dispatch:
@@ -19,6 +30,11 @@ on:
         type: string
         required: true
         default: main
+      reuse_msi_run:
+        description: '前の実行の MSI を使い回す（その実行の番号。空ならビルドする）'
+        type: string
+        required: false
+        default: ''
       run_tests:
         description: 'テストも動かす（bazelisk test ... -c dbg --build_tests_only）'
         type: boolean
@@ -26,6 +42,8 @@ on:
 
 permissions:
   contents: read
+  # To download the MSI of an earlier run (reuse_msi_run).
+  actions: read
 
 concurrency:
   group: mozlumi-windows-build-${{ inputs.ref }}
@@ -45,7 +63,17 @@ jobs:
           submodules: false
           persist-credentials: false
 
+      # The CI scripts come from this workflow's own commit, not from "ref".
+      - name: Checkout the CI scripts
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: _mozlumi_ci
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
       - name: Set up Python
+        if: ${{ inputs.reuse_msi_run == '' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -100,6 +128,7 @@ jobs:
           Write-Host ("mozlumi_update.ps1: BOM ok, 0 parse errors (PowerShell {0})" -f $PSVersionTable.PSVersion)
 
       - name: Prepare daily dictionary
+        if: ${{ inputs.reuse_msi_run == '' }}
         shell: pwsh
         env:
           PYTHONUTF8: "1"
@@ -109,12 +138,14 @@ jobs:
           .\tools\dictionary\prepare_daily_dictionary.ps1
 
       - name: Try to restore update_deps cache
+        if: ${{ inputs.reuse_msi_run == '' }}
         uses: actions/cache@v5
         with:
           path: src/third_party_cache
           key: mozlumi-update_deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/build_tools/update_deps.py') }}
 
       - name: Install Dependencies
+        if: ${{ inputs.reuse_msi_run == '' }}
         shell: cmd
         working-directory: .\src
         # This command uses src/third_party_cache as the download cache.
@@ -122,6 +153,7 @@ jobs:
           python build_tools/update_deps.py
 
       - name: Check Clang and use Visual Studio 2022
+        if: ${{ inputs.reuse_msi_run == '' }}
         shell: pwsh
         run: |
           Set-StrictMode -Version Latest
@@ -150,20 +182,42 @@ jobs:
           Write-Host "Clang:    $($clangVersion[0])"
           Write-Host "BAZEL_VC: $vc"
 
+      # Qt (about 19 minutes) is reused while build_qt.py and update_deps.py
+      # (which pins the Qt source) stay the same.
+      - name: Restore the built Qt
+        id: qt_cache
+        if: ${{ inputs.reuse_msi_run == '' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: src/third_party/qt
+          key: mozlumi-qt-${{ runner.os }}-${{ runner.arch }}-vs2022-release-${{ hashFiles('src/build_tools/build_qt.py', 'src/build_tools/update_deps.py') }}
+
       - name: Build Qt
+        if: ${{ inputs.reuse_msi_run == '' && steps.qt_cache.outputs.cache-hit != 'true' }}
         shell: cmd
         working-directory: .\src
         run: |
           python build_tools/build_qt.py --release --confirm_license
 
+      # Saved right away, so that it is kept even if a later step fails.
+      - name: Save the built Qt
+        if: ${{ inputs.reuse_msi_run == '' && steps.qt_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: src/third_party/qt
+          key: ${{ steps.qt_cache.outputs.cache-primary-key }}
+
       # This is needed only for GitHub Actions where free disk space is quite limited.
+      # Qt src is not there when the built Qt came from the cache.
       - name: Delete Qt src to save disk space
+        if: ${{ inputs.reuse_msi_run == '' }}
         shell: cmd
         working-directory: .\src
         run: |
-          rmdir third_party\qt_src /s /q
+          if exist third_party\qt_src rmdir third_party\qt_src /s /q
 
       - name: Build Mozlumi64.msi
+        if: ${{ inputs.reuse_msi_run == '' }}
         shell: cmd
         working-directory: .\src
         env:
@@ -171,94 +225,76 @@ jobs:
         run: |
           bazelisk build --config release_build package
 
-      # So that a long build is not lost when a later step fails.
+      # So that a long build is not lost when a later step fails. source.txt
+      # records what it was built from, for reuse_msi_run.
       - name: Keep a copy of the built MSI
         id: keep
+        if: ${{ inputs.reuse_msi_run == '' }}
         shell: pwsh
+        env:
+          MOZLUMI_VERSION: ${{ steps.version.outputs.version }}
+          MOZLUMI_BUILD: ${{ steps.version.outputs.build }}
+          MOZLUMI_COMMIT: ${{ steps.version.outputs.commit }}
+          SOURCE_REF: ${{ inputs.ref }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $dir = Join-Path $env:RUNNER_TEMP 'mozlumi-raw'
+          $dir = [string](Join-Path $env:RUNNER_TEMP 'mozlumi-raw')
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           Copy-Item -LiteralPath 'src\bazel-bin\win32\installer\Mozlumi64.msi' -Destination $dir
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          $text = "ref=$env:SOURCE_REF`ncommit=$env:MOZLUMI_COMMIT`nversion=$env:MOZLUMI_VERSION`nbuild=$env:MOZLUMI_BUILD`n"
+          [IO.File]::WriteAllText([string](Join-Path $dir 'source.txt'), $text, $utf8)
+
+      - name: Download the MSI of the earlier run
+        if: ${{ inputs.reuse_msi_run != '' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: unchecked-Mozlumi64-msi
+          path: ${{ runner.temp }}/mozlumi-raw
+          run-id: ${{ inputs.reuse_msi_run }}
+          github-token: ${{ github.token }}
+
+      - name: Check that the earlier MSI was built from this source
+        if: ${{ inputs.reuse_msi_run != '' }}
+        shell: pwsh
+        env:
+          MOZLUMI_COMMIT: ${{ steps.version.outputs.commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = Join-Path $env:RUNNER_TEMP 'mozlumi-raw\source.txt'
+          if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            Write-Host '::warning::The earlier run has no source.txt, so its source commit was not checked. The version check still runs.'
+            exit 0
+          }
+          $built = ''
+          foreach ($line in Get-Content -LiteralPath $file) {
+            if ($line -match '^commit=([0-9a-f]{40})$') { $built = $Matches[1] }
+          }
+          Get-Content -LiteralPath $file | ForEach-Object { Write-Host $_ }
+          if ($built -ne $env:MOZLUMI_COMMIT) {
+            throw "The earlier MSI was built from $built, but ref is now at $env:MOZLUMI_COMMIT. Put that commit in ref."
+          }
 
       - name: Check the MSI and give it the release name
         shell: powershell
         env:
           MOZLUMI_VERSION: ${{ steps.version.outputs.version }}
           MOZLUMI_BUILD: ${{ steps.version.outputs.build }}
-          MOZLUMI_NAME: ${{ steps.version.outputs.name }}
           MOZLUMI_COMMIT: ${{ steps.version.outputs.commit }}
           SOURCE_REF: ${{ inputs.ref }}
+          REUSE_MSI_RUN: ${{ inputs.reuse_msi_run }}
         run: |
           $ErrorActionPreference = 'Stop'
-          # [string]: what Join-Path returns is a wrapped object, and COM
-          # (OpenDatabase) rejects it with "Type mismatch" in an argument array.
-          $msi = [string](Join-Path $env:GITHUB_WORKSPACE 'src\bazel-bin\win32\installer\Mozlumi64.msi')
-          if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) {
-            throw "Mozlumi64.msi was not produced: $msi"
-          }
-
-          # Read the Property table (read-only), like the updater does.
-          $installer = New-Object -ComObject WindowsInstaller.Installer
-          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($msi, 0))
-          $props = @{}
-          foreach ($p in @('ProductName', 'ProductVersion', 'Manufacturer', 'UpgradeCode')) {
-            $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db,
-                @("SELECT ``Value`` FROM ``Property`` WHERE ``Property`` = '$p'"))
-            [void]$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
-            $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-            if ($null -ne $record) {
-              $props[$p] = [string]$record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1)
-              [void][Runtime.InteropServices.Marshal]::ReleaseComObject($record)
-            }
-            [void]$view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
-            [void][Runtime.InteropServices.Marshal]::ReleaseComObject($view)
-          }
-          [void][Runtime.InteropServices.Marshal]::ReleaseComObject($db)
-          [void][Runtime.InteropServices.Marshal]::ReleaseComObject($installer)
-          [GC]::Collect()
-          [GC]::WaitForPendingFinalizers()
-
-          foreach ($p in @('ProductName', 'ProductVersion', 'Manufacturer', 'UpgradeCode')) {
-            Write-Host ("{0,-15} {1}" -f $p, $props[$p])
-          }
-          $expected = [ordered]@{
-            ProductName    = 'Mozlumi'
-            ProductVersion = "$env:MOZLUMI_VERSION.$env:MOZLUMI_BUILD"
-            Manufacturer   = 'Curren Lumi Project'
-            UpgradeCode    = '{584AEC93-7347-4103-AF0D-8C17411BE02F}'
-          }
-          foreach ($key in $expected.Keys) {
-            if ([string]$props[$key] -ne $expected[$key]) {
-              throw "$key is '$($props[$key])', expected '$($expected[$key])'."
-            }
-          }
-
-          $outDir = Join-Path $env:RUNNER_TEMP 'mozlumi-msi'
-          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-          $msiName = "$env:MOZLUMI_NAME.msi"
-          $out = Join-Path $outDir $msiName
-          Copy-Item -LiteralPath $msi -Destination $out
-          $hash = (Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash.ToLowerInvariant()
-          $utf8 = New-Object System.Text.UTF8Encoding($false)
-          [IO.File]::WriteAllText("$out.sha256", "$hash  $msiName`n", $utf8)
-          $size = (Get-Item -LiteralPath $out).Length
-
-          $summary = @(
-            "## $msiName",
-            '',
-            "| | |",
-            "| --- | --- |",
-            "| Source | ``$env:SOURCE_REF`` (``$env:MOZLUMI_COMMIT``) |",
-            "| Version | $env:MOZLUMI_VERSION Build $env:MOZLUMI_BUILD (MSI $($props['ProductVersion'])) |",
-            "| Size | $size bytes |",
-            "| SHA-256 | ``$hash`` |",
-            '',
-            "Files: ``$msiName``, ``$msiName.sha256``",
-            ''
-          ) -join "`n"
-          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summary, $utf8)
-          Write-Host "$hash  $msiName ($size bytes)"
+          $script = Join-Path $env:GITHUB_WORKSPACE '_mozlumi_ci\.github\scripts\mozlumi_check_msi.ps1'
+          $source = "``$env:SOURCE_REF`` (``$env:MOZLUMI_COMMIT``)"
+          if ($env:REUSE_MSI_RUN) { $source += ", MSI of run $env:REUSE_MSI_RUN" }
+          & $script `
+              -MsiPath ([string](Join-Path $env:RUNNER_TEMP 'mozlumi-raw\Mozlumi64.msi')) `
+              -Version $env:MOZLUMI_VERSION `
+              -Build $env:MOZLUMI_BUILD `
+              -OutDir ([string](Join-Path $env:RUNNER_TEMP 'mozlumi-msi')) `
+              -Source $source `
+              -SummaryPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload the MSI and its .sha256
         uses: actions/upload-artifact@v6
@@ -268,7 +304,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload the unchecked MSI (only when a later step failed)
-        if: ${{ failure() && steps.keep.outcome == 'success' }}
+        if: ${{ failure() && inputs.reuse_msi_run == '' && steps.keep.outcome == 'success' }}
         uses: actions/upload-artifact@v6
         with:
           name: unchecked-Mozlumi64-msi
