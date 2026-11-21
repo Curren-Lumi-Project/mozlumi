@@ -1,0 +1,38 @@
+# Copyright 2026 Curren Lumi Project.
+#
+# Mozlumi: the windows of the Windows updater (win32/updater/mozlumi_update.ps1),
+# shown by "mozlumi_tool.exe --mode=update_dialog" so that they look like the
+# other Mozlumi windows.
+
+load(
+    "//bazel:qt.bzl",
+    "mozc_cc_qt_library",
+    "mozc_qt_rcc",
+)
+
+package(default_visibility = ["//gui:__subpackages__"])
+
+mozc_qt_rcc(
+    name = "qrc_update_dialog",
+    srcs = [
+        "//data/images:product_icon_32bpp-128.png",
+    ],
+    outs = ["qrc_update_dialog.cc"],
+    qrc_file = "update_dialog.qrc",
+    qrc_name = "qrc_update_dialog",
+)
+
+mozc_cc_qt_library(
+    name = "update_dialog",
+    srcs = [
+        "update_dialog_libmain.cc",
+        ":qrc_update_dialog",
+    ],
+    deps = [
+        "//base:file_util",
+        "//gui/base:gui_base",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
