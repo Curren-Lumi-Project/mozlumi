@@ -107,18 +107,18 @@ def main():
       '%s\n'
       '%s\n') % (build_details, resource_data, template_data)
 
-  # Windows Installer compares only three numeric version components; PE
-  # resources use four.  The user-facing ProductVersion remains SemVer while
-  # FileVersion is raised above all Mozc 3.33.x releases already published.
+  # The user-facing ProductVersion remains SemVer (e.g. 1.3.0). Mozlumi:
+  # FileVersion is the same as the MSI version (e.g. 1.3.0.36 for
+  # "1.3.0 Build 36").
   release_version = version.GetMozkeyReleaseVersion()
-  file_version = version.GetMozkeyMsiVersion()
+  file_version = version.GetMozlumiWindowsVersion()
   product_number = ','.join(release_version.split('.') + ['0'])
-  file_number = ','.join(file_version.split('.') + ['0'])
+  file_number = ','.join(file_version.split('.'))
   version_definition = (
       '#define MOZKEY_RES_PRODUCT_VERSION_NUMBER %s\n' % product_number
       + '#define MOZKEY_RES_PRODUCT_VERSION_STRING "%s"\n' % release_version
       + '#define MOZKEY_RES_FILE_VERSION_NUMBER %s\n' % file_number
-      + '#define MOZKEY_RES_FILE_VERSION_STRING "%s.0"\n' % file_version
+      + '#define MOZKEY_RES_FILE_VERSION_STRING "%s"\n' % file_version
       + version.GetVersionInFormat(bootstrapper_template))
 
   out_encoding = 'utf-8' if options.utf8 else 'utf-16le'

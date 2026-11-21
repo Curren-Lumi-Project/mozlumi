@@ -57,7 +57,7 @@ mozc_qt_rcc(
     srcs = [
         "about_dialog_en.qm",
         "about_dialog_ja.qm",
-        "//data/images:product_icon_32bpp-128.png",
+        "//data/images:product_icon_32bpp-512.png",
         "//gui/base:tr_en.qm",
         "//gui/base:tr_ja.qm",
     ],

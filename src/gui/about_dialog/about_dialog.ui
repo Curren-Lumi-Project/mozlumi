@@ -100,15 +100,19 @@
      </rect>
     </property>
     <layout class="QGridLayout" name="gridLayout_3">
+     <property name="verticalSpacing">
+      <number>2</number>
+     </property>
      <item row="0" column="0">
       <widget class="QLabel" name="label_6">
        <property name="font">
         <font>
-         <pointsize>10</pointsize>
+         <pointsize>9</pointsize>
         </font>
        </property>
        <property name="text">
-        <string>Copyright 2026 Curren Lumi Project. Portions Copyright 2026 koyasi777, 2010-2026 Google LLC.</string>
+        <string>Copyright 2026 Curren Lumi Project.
+Portions Copyright 2026 koyasi777, 2010-2026 Google LLC.</string>
        </property>
        <property name="alignment">
         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>

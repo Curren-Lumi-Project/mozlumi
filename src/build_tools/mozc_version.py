@@ -389,6 +389,24 @@ class MozcVersion(object):
     major, minor, patch = self.GetMozkeyReleaseVersionParts()
     return '%d.%d.%d' % (100 + major, minor, patch)
 
+  def GetMozlumiWindowsVersion(self):
+    """Returns the Mozlumi Windows version, e.g. 1.3.0.36.
+
+    Used as the MSI ProductVersion and the PE FileVersion. It reads as
+    "1.3.0 Build 36". Windows Installer compares only the first three fields;
+    installer_oss_64bit.wxs replaces an installed product whose first three
+    fields are the same, so builds of one release upgrade each other.
+    """
+    major, minor, patch = self.GetMozkeyReleaseVersionParts()
+    build_text = self.GetVersionInFormat('@MOZLUMI_BUILD@')
+    if not re.fullmatch(r'0|[1-9][0-9]*', build_text):
+      raise ValueError('Invalid Mozlumi build number: %r' % build_text)
+    build = int(build_text)
+    if major > 255 or build > 65535:
+      raise ValueError('Mozlumi version exceeds Windows version limits: '
+                       '%d.%d.%d.%d' % (major, minor, patch, build))
+    return '%d.%d.%d.%d' % (major, minor, patch, build)
+
   def GetShortVersionString(self, use_build_oss=False):
     """Returns the short version info string.
 

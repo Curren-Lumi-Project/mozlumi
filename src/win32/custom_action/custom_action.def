@@ -13,6 +13,8 @@ EXPORTS
     StopCacheService
     InstallMozcFirewallRules
     RemoveMozcFirewallRules
+    RegisterUpdateTask
+    UnregisterUpdateTask
     InitialInstallation
     InitialInstallationCommit
     EnableTipProfile

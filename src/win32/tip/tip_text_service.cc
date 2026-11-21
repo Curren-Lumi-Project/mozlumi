@@ -198,39 +198,40 @@ constexpr GUID kTipFunctionProvider = {
 
 #else  // GOOGLE_JAPANESE_INPUT_BUILD
 
-constexpr char kHelpUrl[] = "https://github.com/koyasi777/mozkey";
+// Mozlumi: the product page on カレンラボ (same as the about dialog).
+constexpr char kHelpUrl[] = "https://note.curren-lumi.blog/mozlumi-download/";
 constexpr wchar_t kTaskWindowClassName[] =
-    L"Mozc Immersive Task Message Window";
+    L"Mozlumi Immersive Task Message Window";
 constexpr wchar_t kThemeWindowClassName[] =
-    L"Mozc Theme Change Window";
+    L"Mozlumi Theme Change Window";
 
-// {F16B7D92-84B0-4AC6-A35B-06EA77180A18}
+// {52B0BC24-BE5A-4D5E-B31B-A66AEC40EB8E}
 constexpr GUID kTipPreservedKey_Kanji = {
-    0xf16b7d92,
-    0x84b0,
-    0x4ac6,
-    {0xa3, 0x5b, 0x6, 0xea, 0x77, 0x18, 0x0a, 0x18}};
+    0x52b0bc24,
+    0xbe5a,
+    0x4d5e,
+    {0xb3, 0x1b, 0xa6, 0x6a, 0xec, 0x40, 0xeb, 0x8e}};
 
-// {80DAD291-1981-46FA-998D-B84D6C1BA02C}
+// {8C9AAB66-619E-42F3-BDCA-A069706E9AF0}
 constexpr GUID kTipPreservedKey_F10 = {
-    0x80dad291,
-    0x1981,
-    0x46fa,
-    {0x99, 0x8d, 0xb8, 0x4d, 0x6c, 0x1b, 0xa0, 0x2c}};
+    0x8c9aab66,
+    0x619e,
+    0x42f3,
+    {0xbd, 0xca, 0xa0, 0x69, 0x70, 0x6e, 0x9a, 0xf0}};
 
-// {95571C08-B05A-4ABA-B038-F3DEAE532F91}
+// {91D73DD0-E8C0-4DEE-AAA5-D13A21E42EA4}
 constexpr GUID kTipPreservedKey_Romaji = {
-    0x95571c08,
-    0xb05a,
-    0x4aba,
-    {0xb0, 0x38, 0xf3, 0xde, 0xae, 0x53, 0x2f, 0x91}};
+    0x91d73dd0,
+    0xe8c0,
+    0x4dee,
+    {0xaa, 0xa5, 0xd1, 0x3a, 0x21, 0xe4, 0x2e, 0xa4}};
 
-// {ECFB2528-E7D2-4CA0-BBE4-32FE08C148F4}
+// {8631DC43-0A4A-435C-9B1D-01ABC11992C1}
 constexpr GUID kTipFunctionProvider = {
-    0xecfb2528,
-    0xe7d2,
-    0x4ca0,
-    {0xbb, 0xe4, 0x32, 0xfe, 0x8, 0xc1, 0x48, 0xf4}};
+    0x8631dc43,
+    0x0a4a,
+    0x435c,
+    {0x9b, 0x1d, 0x01, 0xab, 0xc1, 0x19, 0x92, 0xc1}};
 
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
@@ -276,6 +277,9 @@ std::string GetMozcToolCommand(TipLangBarCallback::ItemId menu_id) {
     case TipLangBarCallback::kAbout:
       // Open the about dialog.
       return "about_dialog";
+    case TipLangBarCallback::kUpdateCheck:
+      // Mozlumi: start the updater.
+      return "update_check";
     default:
       DLOG(FATAL) << "Unexpected item id: " << menu_id;
       return "";
@@ -995,6 +999,7 @@ class TipTextServiceImpl
       case TipLangBarCallback::kDictionary:
       case TipLangBarCallback::kWordRegister:
       case TipLangBarCallback::kAbout:
+      case TipLangBarCallback::kUpdateCheck:
         return SpawnTool(GetMozcToolCommand(menu_id));
       case TipLangBarCallback::kHelp:
         // Open the about dialog.

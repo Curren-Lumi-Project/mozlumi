@@ -122,6 +122,9 @@ Suggestion	Shift Enter	CommitFirstSuggestion
 ZenzConversion	Space	RevertZenzToMozc
 ZenzConversion	Ctrl Delete	BlockVisibleZenzCorrection
 Composition	Option Tab	ForceZenzLiveCorrection
+Composition	Ctrl Tab	ForceZenzLiveCorrection
 Conversion	Option Tab	ForceZenzLiveCorrection
+Conversion	Ctrl Tab	ForceZenzLiveCorrection
 ZenzConversion	Option Tab	RevertZenzToMozc
+ZenzConversion	Ctrl Tab	RevertZenzToMozc
 LiveConversion	Backspace	Backspace

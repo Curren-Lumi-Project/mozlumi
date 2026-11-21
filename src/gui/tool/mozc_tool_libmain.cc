@@ -54,6 +54,13 @@
 #ifdef _WIN32
 #include <windows.h>
 
+#include <chrono>
+#include <filesystem>
+
+#include "absl/status/statusor.h"
+#include "base/file_util.h"
+#include "base/system_util.h"
+#include "base/win32/wide_char.h"
 #include "gui/base/win_util.h"
 #endif  // _WIN32
 
@@ -73,6 +80,8 @@ int RunErrorMessageDialog(int argc, char *argv[]);
 // (PostInstall|RunAdministartion)Dialog are used for Windows only.
 int RunPostInstallDialog(int argc, char *argv[]);
 int RunAdministrationDialog(int argc, char *argv[]);
+// Mozlumi: the windows of the updater (gui/update_dialog).
+int RunUpdateDialog(int argc, char *argv[]);
 #endif  // _WIN32
 
 #ifdef __APPLE__
@@ -90,9 +99,9 @@ constexpr int kTsfProfileIconIndexSimpleHighContrast = 17;
 
 constexpr wchar_t kTsfProfileSubKey[] =
     L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}\\"
+    L"{A34DEDAC-0BD6-4171-9032-B264DFE6489B}\\"
     L"LanguageProfile\\0x00000411\\"
-    L"{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}";
+    L"{B09813B1-1DA5-4779-BED8-39097D25778D}";
 
 bool EndsWithCaseInsensitive(const std::wstring& text,
                              const std::wstring& suffix) {
@@ -144,16 +153,16 @@ std::wstring GetCurrentModuleDirectory() {
 std::wstring GetFallbackTsfProfileIconFile() {
   const std::wstring module_dir = GetCurrentModuleDirectory();
   if (!module_dir.empty()) {
-    return module_dir + L"\\mozc_tip32.dll";
+    return module_dir + L"\\mozlumi_tip32.dll";
   }
 
   wchar_t program_files_x86[MAX_PATH] = {};
   const DWORD length = ::GetEnvironmentVariableW(
       L"ProgramFiles(x86)", program_files_x86, MAX_PATH);
   if (length > 0 && length < MAX_PATH) {
-    return std::wstring(program_files_x86) + L"\\Mozc\\mozc_tip32.dll";
+    return std::wstring(program_files_x86) + L"\\Mozlumi\\mozlumi_tip32.dll";
   }
-  return L"C:\\Program Files (x86)\\Mozc\\mozc_tip32.dll";
+  return L"C:\\Program Files (x86)\\Mozlumi\\mozlumi_tip32.dll";
 }
 
 bool ReadTsfProfileIconFile(std::wstring* icon_file) {
@@ -179,7 +188,7 @@ bool ReadTsfProfileIconFile(std::wstring* icon_file) {
 std::wstring GetTsfProfileIconFileToWrite() {
   std::wstring icon_file;
   if (ReadTsfProfileIconFile(&icon_file) &&
-      EndsWithCaseInsensitive(icon_file, L"\\mozc_tip32.dll")) {
+      EndsWithCaseInsensitive(icon_file, L"\\mozlumi_tip32.dll")) {
     return icon_file;
   }
   return GetFallbackTsfProfileIconFile();
@@ -229,6 +238,64 @@ int RunTsfProfileIconStyleUpdate() {
     return 6;
   }
 
+  return 0;
+}
+
+// Mozlumi: starts the updater (win32/updater/mozlumi_update.ps1, installed
+// next to this tool) without a console window and returns at once. The
+// updater shows its own windows. "Auto" is started by the scheduled task
+// every hour; it checks at most once a day, so the same conditions are
+// checked here first to avoid starting PowerShell for nothing.
+int RunUpdateCheck(bool auto_mode) {
+  if (auto_mode) {
+    const std::string profile_dir = mozc::SystemUtil::GetUserProfileDirectory();
+    if (mozc::FileUtil::FileExists(
+            mozc::FileUtil::JoinPath(profile_dir, "update_check_disabled"))
+            .ok()) {
+      return 0;
+    }
+    // GetModificationTime() returns the ticks of the file time clock.
+    using FileClock = std::filesystem::file_time_type::clock;
+    const absl::StatusOr<mozc::FileTimeStamp> last_check =
+        mozc::FileUtil::GetModificationTime(
+            mozc::FileUtil::JoinPath(profile_dir, "update_last_check"));
+    const mozc::FileTimeStamp now =
+        static_cast<mozc::FileTimeStamp>(FileClock::now().time_since_epoch().count());
+    const mozc::FileTimeStamp one_day = static_cast<mozc::FileTimeStamp>(
+        std::chrono::duration_cast<FileClock::duration>(std::chrono::hours(24))
+            .count());
+    if (last_check.ok() && *last_check <= now && now - *last_check < one_day) {
+      return 0;
+    }
+  }
+
+  wchar_t system_dir[MAX_PATH] = {};
+  const UINT length = ::GetSystemDirectoryW(system_dir, MAX_PATH);
+  if (length == 0 || length >= MAX_PATH) {
+    return 1;
+  }
+  const std::wstring powershell =
+      std::wstring(system_dir) + L"\\WindowsPowerShell\\v1.0\\powershell.exe";
+  const std::wstring script = mozc::win32::Utf8ToWide(mozc::FileUtil::JoinPath(
+      mozc::SystemUtil::GetServerDirectory(), "mozlumi_update.ps1"));
+  std::wstring command_line = L"\"" + powershell +
+                              L"\" -NoProfile -NonInteractive "
+                              L"-ExecutionPolicy Bypass -WindowStyle Hidden "
+                              L"-File \"" +
+                              script + L"\" -Mode " +
+                              (auto_mode ? L"Auto" : L"Manual");
+
+  STARTUPINFOW startup_info = {};
+  startup_info.cb = sizeof(startup_info);
+  PROCESS_INFORMATION process_info = {};
+  if (!::CreateProcessW(powershell.c_str(), command_line.data(), nullptr,
+                        nullptr, FALSE, CREATE_NO_WINDOW, nullptr, system_dir,
+                        &startup_info, &process_info)) {
+    LOG(ERROR) << "CreateProcessW failed: " << ::GetLastError();
+    return 1;
+  }
+  ::CloseHandle(process_info.hThread);
+  ::CloseHandle(process_info.hProcess);
   return 0;
 }
 
@@ -294,6 +361,17 @@ int RunMozcTool(int argc, char *argv[]) {
     return -1;
   }
 
+#ifdef _WIN32
+  // Mozlumi: the updater. "update_check" is from the input menu,
+  // "update_check_auto" from the scheduled task.
+  if (absl::GetFlag(FLAGS_mode) == "update_check") {
+    return RunUpdateCheck(/*auto_mode=*/false);
+  }
+  if (absl::GetFlag(FLAGS_mode) == "update_check_auto") {
+    return RunUpdateCheck(/*auto_mode=*/true);
+  }
+#endif  // _WIN32
+
   // install Qt debug handler
   qInstallMessageHandler(mozc::gui::DebugUtil::MessageHandler);
 
@@ -319,6 +397,9 @@ int RunMozcTool(int argc, char *argv[]) {
   } else if (absl::GetFlag(FLAGS_mode) == "administration_dialog") {
     // administration_dialog is used on Windows only.
     return RunAdministrationDialog(argc, argv);
+  } else if (absl::GetFlag(FLAGS_mode) == "update_dialog") {
+    // Mozlumi: the windows of the updater (win32/updater/mozlumi_update.ps1).
+    return RunUpdateDialog(argc, argv);
 #endif  // _WIN32
 #ifdef __APPLE__
   } else if (absl::GetFlag(FLAGS_mode) == "prelauncher") {

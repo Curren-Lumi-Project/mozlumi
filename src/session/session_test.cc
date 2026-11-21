@@ -246,7 +246,7 @@ class ScopedUserProfileForZenzFeedbackSessionTest {
     const std::wstring local_low_dir =
         JoinPathForZenzFeedbackSessionTest(app_data_dir, L"LocalLow");
     const std::wstring mozc_dir =
-        JoinPathForZenzFeedbackSessionTest(local_low_dir, L"Mozc");
+        JoinPathForZenzFeedbackSessionTest(local_low_dir, L"Mozlumi");
     const std::wstring feedback_path =
         JoinPathForZenzFeedbackSessionTest(mozc_dir, L"zenz_feedback.tsv");
 
@@ -265,7 +265,7 @@ class ScopedUserProfileForZenzFeedbackSessionTest {
             JoinPathForZenzFeedbackSessionTest(
                 JoinPathForZenzFeedbackSessionTest(profile_dir_, L"AppData"),
                 L"LocalLow"),
-            L"Mozc"),
+            L"Mozlumi"),
         L"zenz_feedback.tsv");
   }
 

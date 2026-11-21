@@ -1,0 +1,9 @@
+# Copyright 2026 Curren Lumi Project.
+#
+# Mozlumi: the updater for Windows. The script is installed next to
+# mozlumi_tool.exe, which starts it (see gui/tool/mozc_tool_libmain.cc).
+
+exports_files(
+    ["mozlumi_update.ps1"],
+    visibility = ["//win32/installer:__subpackages__"],
+)

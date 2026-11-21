@@ -136,7 +136,11 @@ AboutDialog::AboutDialog(QWidget *parent)
 void AboutDialog::paintEvent(QPaintEvent *event) {
   // draw product logo
   QPainter painter(this);
-  const QRect image_rect = product_image_->rect();
+  // Mozlumi: the logo is 512px and is drawn at 128 logical pixels, smoothly,
+  // so that it stays sharp on high DPI screens (Windows scaling, Retina).
+  constexpr int kLogoSize = 128;
+  painter.setRenderHint(QPainter::SmoothPixmapTransform);
+  const QRect image_rect(0, 0, kLogoSize, kLogoSize);
   // allow clipping on right / bottom borders
   const QRect draw_rect(std::max(5, width() - image_rect.width() - 15),
                         std::max(0, color_frame->y() - image_rect.height()),
