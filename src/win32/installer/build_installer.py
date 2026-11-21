@@ -167,7 +167,9 @@ def run_wix4(args) -> None:
         f'Software\\Google\\Update\\ClientState\\{{{omaha_guid}}}'
     )
   elif branding == 'Mozc':
-    upgrade_code = 'DD94B570-B5E2-4100-9D42-61930C611D8A'
+    # Mozlumi: its own UpgradeCode, so that Mozlumi and Mozc/Mozkey are not
+    # treated as versions of the same product.
+    upgrade_code = '584AEC93-7347-4103-AF0D-8C17411BE02F'
 
   # Keep the original Mozc build identity separate from the installer version.
   msi_version = (version.GetMozkeyMsiVersion() if branding == 'Mozc'

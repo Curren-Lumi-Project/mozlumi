@@ -909,11 +909,11 @@ int wmain() {
       foreground_service_is_mozkey ? L"true" : L"false");
 
   const bool mozc_tip64arm_loaded =
-      ::GetModuleHandleW(L"mozc_tip64arm.dll") != nullptr;
+      ::GetModuleHandleW(L"mozlumi_tip64arm.dll") != nullptr;
   const bool mozc_tip64_loaded =
-      ::GetModuleHandleW(L"mozc_tip64.dll") != nullptr;
+      ::GetModuleHandleW(L"mozlumi_tip64.dll") != nullptr;
   const bool mozc_tip64x_loaded =
-      ::GetModuleHandleW(L"mozc_tip64x.dll") != nullptr;
+      ::GetModuleHandleW(L"mozlumi_tip64x.dll") != nullptr;
 
   std::wprintf(
       L"mozc_tip64arm_loaded=%ls\n",

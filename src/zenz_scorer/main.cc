@@ -54,9 +54,11 @@ HANDLE g_llama_process = nullptr;
 HANDLE g_llama_job = nullptr;
 DWORD g_llama_process_id = 0;
 
-constexpr wchar_t kDefaultPipeName[] = L"\\\\.\\pipe\\mozc_zenz_scorer";
+// Mozlumi: separate from Mozkey's scorer so that both can run side by side.
+// Must match zenz_live_correction_pipe_name in protocol/config.proto.
+constexpr wchar_t kDefaultPipeName[] = L"\\\\.\\pipe\\mozlumi_zenz_scorer";
 constexpr wchar_t kSingleInstanceMutexName[] =
-    L"Local\\MozcZenzScorerSingleInstance";
+    L"Local\\MozlumiZenzScorerSingleInstance";
 
 constexpr wchar_t kDefaultHost[] = L"127.0.0.1";
 constexpr int kApiKeyBytes = 32;

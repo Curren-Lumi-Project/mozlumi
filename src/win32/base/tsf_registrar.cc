@@ -49,6 +49,14 @@ namespace mozc {
 namespace win32 {
 namespace {
 
+// Mozlumi: the culture-invariant name written to the registry (the localized
+// name comes from IDS_IME_DISPLAYNAME in tip_resource.rc).
+#ifdef GOOGLE_JAPANESE_INPUT_BUILD
+constexpr const char* kRegistrationName = mozc::kProductNameInEnglish;
+#else   // GOOGLE_JAPANESE_INPUT_BUILD
+constexpr const char* kRegistrationName = kMozlumiWinProductName;
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
+
 // Defines the constant strings used in the TsfRegistrar::RegisterCOMServer()
 // function and the TsfRegistrar::UnregisterCOMServer() function.
 constexpr wchar_t kTipInfoKeyPrefix[] = L"CLSID\\";
@@ -130,7 +138,7 @@ HRESULT TsfRegistrar::RegisterCOMServer(const wchar_t* path, DWORD length,
     return HRESULT_FROM_WIN32(result);
   }
 
-  std::wstring description = Utf8ToWide(mozc::kProductNameInEnglish);
+  std::wstring description = Utf8ToWide(kRegistrationName);
 
   result = key.SetStringValue(nullptr, description.c_str(), REG_SZ);
   if (result != ERROR_SUCCESS) {
@@ -206,7 +214,7 @@ HRESULT TsfRegistrar::RegisterProfiles(std::wstring_view resource_dll_path) {
   if (SUCCEEDED(result)) {
     // We use English name here as culture-invariant description.
     // Localized name is specified later by SetLanguageProfileDisplayName.
-    std::wstring description = Utf8ToWide(mozc::kProductNameInEnglish);
+    std::wstring description = Utf8ToWide(kRegistrationName);
 
     result = profiles->AddLanguageProfile(
         TsfProfile::GetTextServiceGuid(), TsfProfile::GetLangId(),

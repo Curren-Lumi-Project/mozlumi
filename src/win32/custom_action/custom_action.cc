@@ -172,8 +172,8 @@ void TerminateMozcProcessByImageName(const wchar_t* image_name,
 
 void ShutdownZenzRuntimeProcesses() {
   TerminateMozcProcessByImageName(
-      L"mozc_zenz_scorer.exe",
-      "mozc_zenz_scorer.exe");
+      L"mozlumi_zenz_scorer.exe",
+      mozc::kMozlumiZenzScorerExeName);
   TerminateMozcProcessByImageName(
       L"llama-server.exe",
       "llama-server.exe");
@@ -353,16 +353,20 @@ struct MozcFirewallRule {
   const char* filename;
 };
 
+// Mozlumi: rule names are separate from Mozkey's "Mozc Offline - ..." rules.
+// AddFirewallRule() deletes rules of the same name first, so sharing the names
+// would remove Mozkey's rules (and uninstalling either would remove both).
 constexpr MozcFirewallRule kMozcOfflineFirewallRules[] = {
-    {L"Mozc Offline - Block mozc_server outbound", "mozc_server.exe"},
-    {L"Mozc Offline - Block mozc_tool outbound", "mozc_tool.exe"},
-    {L"Mozc Offline - Block mozc_renderer outbound", "mozc_renderer.exe"},
-    {L"Mozc Offline - Block mozc_broker outbound", "mozc_broker.exe"},
-    {L"Mozc Offline - Block mozc_cache_service outbound",
-     "mozc_cache_service.exe"},
-    {L"Mozc Offline - Block mozc_zenz_scorer outbound",
-     "mozc_zenz_scorer.exe"},
-    {L"Mozc Offline - Block llama-server outbound", "llama-server.exe"},
+    {L"Mozlumi Offline - Block mozlumi_server outbound", mozc::kMozcServerName},
+    {L"Mozlumi Offline - Block mozlumi_tool outbound", mozc::kMozcTool},
+    {L"Mozlumi Offline - Block mozlumi_renderer outbound",
+     mozc::kMozcRenderer},
+    {L"Mozlumi Offline - Block mozlumi_broker outbound", mozc::kMozcBroker},
+    {L"Mozlumi Offline - Block mozlumi_cache_service outbound",
+     mozc::kMozcCacheServiceExeName},
+    {L"Mozlumi Offline - Block mozlumi_zenz_scorer outbound",
+     mozc::kMozlumiZenzScorerExeName},
+    {L"Mozlumi Offline - Block llama-server outbound", "llama-server.exe"},
 };
 
 void DeleteFirewallRule(std::wstring_view rule_name) {
