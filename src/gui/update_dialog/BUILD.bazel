@@ -15,7 +15,7 @@ package(default_visibility = ["//gui:__subpackages__"])
 mozc_qt_rcc(
     name = "qrc_update_dialog",
     srcs = [
-        "//data/images:product_icon_32bpp-128.png",
+        "//data/images:product_icon_32bpp-512.png",
     ],
     outs = ["qrc_update_dialog.cc"],
     qrc_file = "update_dialog.qrc",
