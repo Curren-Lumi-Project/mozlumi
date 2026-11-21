@@ -717,51 +717,51 @@ std::wstring GetUpdateTaskXml() {
          L"</Task>";
 }
 
-bool ConnectTaskService(CComPtr<ITaskService>* service) {
+bool ConnectTaskService(ATL::CComPtr<ITaskService>* service) {
   if (FAILED(service->CoCreateInstance(__uuidof(TaskScheduler), nullptr,
                                        CLSCTX_INPROC_SERVER))) {
     return false;
   }
-  return SUCCEEDED((*service)->Connect(CComVariant(), CComVariant(),
-                                       CComVariant(), CComVariant()));
+  return SUCCEEDED((*service)->Connect(ATL::CComVariant(), ATL::CComVariant(),
+                                       ATL::CComVariant(), ATL::CComVariant()));
 }
 
 bool RegisterUpdateTaskImpl() {
   mozc::ScopedCOMInitializer com_initializer;
-  CComPtr<ITaskService> service;
+  ATL::CComPtr<ITaskService> service;
   if (!ConnectTaskService(&service)) {
     return false;
   }
-  CComPtr<ITaskFolder> folder;
-  if (FAILED(service->GetFolder(CComBSTR(kUpdateTaskFolderPath), &folder))) {
-    CComPtr<ITaskFolder> root;
-    if (FAILED(service->GetFolder(CComBSTR(L"\\"), &root)) ||
-        FAILED(root->CreateFolder(CComBSTR(kUpdateTaskFolderName),
-                                  CComVariant(), &folder))) {
+  ATL::CComPtr<ITaskFolder> folder;
+  if (FAILED(service->GetFolder(ATL::CComBSTR(kUpdateTaskFolderPath), &folder))) {
+    ATL::CComPtr<ITaskFolder> root;
+    if (FAILED(service->GetFolder(ATL::CComBSTR(L"\\"), &root)) ||
+        FAILED(root->CreateFolder(ATL::CComBSTR(kUpdateTaskFolderName),
+                                  ATL::CComVariant(), &folder))) {
       return false;
     }
   }
-  CComPtr<IRegisteredTask> task;
+  ATL::CComPtr<IRegisteredTask> task;
   return SUCCEEDED(folder->RegisterTask(
-      CComBSTR(kUpdateTaskName), CComBSTR(GetUpdateTaskXml().c_str()),
-      TASK_CREATE_OR_UPDATE, CComVariant(), CComVariant(), TASK_LOGON_GROUP,
-      CComVariant(), &task));
+      ATL::CComBSTR(kUpdateTaskName), ATL::CComBSTR(GetUpdateTaskXml().c_str()),
+      TASK_CREATE_OR_UPDATE, ATL::CComVariant(), ATL::CComVariant(), TASK_LOGON_GROUP,
+      ATL::CComVariant(), &task));
 }
 
 void UnregisterUpdateTaskImpl() {
   mozc::ScopedCOMInitializer com_initializer;
-  CComPtr<ITaskService> service;
+  ATL::CComPtr<ITaskService> service;
   if (!ConnectTaskService(&service)) {
     return;
   }
-  CComPtr<ITaskFolder> folder;
-  if (SUCCEEDED(service->GetFolder(CComBSTR(kUpdateTaskFolderPath), &folder))) {
-    folder->DeleteTask(CComBSTR(kUpdateTaskName), 0);
+  ATL::CComPtr<ITaskFolder> folder;
+  if (SUCCEEDED(service->GetFolder(ATL::CComBSTR(kUpdateTaskFolderPath), &folder))) {
+    folder->DeleteTask(ATL::CComBSTR(kUpdateTaskName), 0);
   }
-  CComPtr<ITaskFolder> root;
-  if (SUCCEEDED(service->GetFolder(CComBSTR(L"\\"), &root))) {
+  ATL::CComPtr<ITaskFolder> root;
+  if (SUCCEEDED(service->GetFolder(ATL::CComBSTR(L"\\"), &root))) {
     // Fails if another task is in the folder; that is fine.
-    root->DeleteFolder(CComBSTR(kUpdateTaskFolderName), 0);
+    root->DeleteFolder(ATL::CComBSTR(kUpdateTaskFolderName), 0);
   }
 }
 
