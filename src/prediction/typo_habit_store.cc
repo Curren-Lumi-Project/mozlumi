@@ -30,13 +30,15 @@
 #include "prediction/typo_habit_store.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <fstream>
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include "absl/log/log.h"
+#include "absl/status/status.h"
+#include "base/file_stream.h"
 #include "base/file_util.h"
 #include "base/system_util.h"
 
@@ -169,7 +171,9 @@ void TypoHabitStore::LoadLocked() {
   if (path_.empty()) {
     return;
   }
-  std::ifstream in(path_);
+  // Mozlumi: InputFileStream/OutputFileStream take UTF-8 paths on Windows
+  // too (a user name in Japanese makes the profile path non-ASCII).
+  InputFileStream in(path_);
   std::string line;
   while (std::getline(in, line) && counts_.size() < kMaxPatterns) {
     const size_t tab = line.find('\t');
@@ -198,7 +202,7 @@ void TypoHabitStore::SaveLocked() const {
   }
   const std::string tmp = path_ + ".tmp";
   {
-    std::ofstream out(tmp, std::ios::trunc);
+    OutputFileStream out(tmp, std::ios::trunc);
     if (!out) {
       return;
     }
@@ -209,7 +213,11 @@ void TypoHabitStore::SaveLocked() const {
       return;
     }
   }
-  std::rename(tmp.c_str(), path_.c_str());
+  // Mozlumi: std::rename() does not replace an existing file on Windows, so
+  // only the first save survived there. AtomicRename() replaces it.
+  if (absl::Status s = FileUtil::AtomicRename(tmp, path_); !s.ok()) {
+    LOG(ERROR) << "AtomicRename failed: " << s;
+  }
 }
 
 }  // namespace prediction

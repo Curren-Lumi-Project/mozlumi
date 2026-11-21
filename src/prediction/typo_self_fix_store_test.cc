@@ -56,6 +56,21 @@ TEST(TypoSelfFixStoreTest, LearnFindAndSave) {
   EXPECT_TRUE(store.FindFixes("kyouhaame", 2).empty());
 }
 
+// Mozlumi: the profile path may contain non-ASCII characters (e.g. a user name
+// in Japanese).
+TEST(TypoSelfFixStoreTest, SavesUnderNonAsciiDirectory) {
+  TempDirectory temp_dir = testing::MakeTempDirectoryOrDie();
+  const std::string dir = FileUtil::JoinPath(temp_dir.path(), "もずるみ");
+  ASSERT_TRUE(FileUtil::CreateDirectory(dir).ok());
+  const std::string path = FileUtil::JoinPath(dir, "typo_self_fixes.tsv");
+  {
+    TypoSelfFixStore store(path);
+    EXPECT_TRUE(store.Learn("issunnnodekigotodatta", "issyunnnodekigotodatta"));
+  }
+  TypoSelfFixStore store(path);
+  EXPECT_EQ(store.FindFixes("sorehaissunnnokotodesita", 2).size(), 1);
+}
+
 }  // namespace
 }  // namespace prediction
 }  // namespace mozc

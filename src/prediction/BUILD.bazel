@@ -1007,8 +1007,11 @@ mozc_cc_library(
     hdrs = ["typo_habit_store.h"],
     visibility = ["//engine:__pkg__"],
     deps = [
+        "//base:file_stream",
         "//base:file_util",
         "//base:system_util",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -1035,8 +1038,11 @@ mozc_cc_library(
         "//session:__pkg__",
     ],
     deps = [
+        "//base:file_stream",
         "//base:file_util",
         "//base:system_util",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
     ],
 )
 
