@@ -171,6 +171,16 @@ jobs:
         run: |
           bazelisk build --config release_build package
 
+      # So that a long build is not lost when a later step fails.
+      - name: Keep a copy of the built MSI
+        id: keep
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'mozlumi-raw'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item -LiteralPath 'src\bazel-bin\win32\installer\Mozlumi64.msi' -Destination $dir
+
       - name: Check the MSI and give it the release name
         shell: powershell
         env:
@@ -181,7 +191,9 @@ jobs:
           SOURCE_REF: ${{ inputs.ref }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $msi = Join-Path $env:GITHUB_WORKSPACE 'src\bazel-bin\win32\installer\Mozlumi64.msi'
+          # [string]: what Join-Path returns is a wrapped object, and COM
+          # (OpenDatabase) rejects it with "Type mismatch" in an argument array.
+          $msi = [string](Join-Path $env:GITHUB_WORKSPACE 'src\bazel-bin\win32\installer\Mozlumi64.msi')
           if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) {
             throw "Mozlumi64.msi was not produced: $msi"
           }
@@ -254,6 +266,14 @@ jobs:
           name: ${{ steps.version.outputs.name }}
           path: ${{ runner.temp }}/mozlumi-msi/
           if-no-files-found: error
+
+      - name: Upload the unchecked MSI (only when a later step failed)
+        if: ${{ failure() && steps.keep.outcome == 'success' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: unchecked-Mozlumi64-msi
+          path: ${{ runner.temp }}/mozlumi-raw/
+          if-no-files-found: warn
 
   test_x64:
     name: Tests (x64, dbg)
