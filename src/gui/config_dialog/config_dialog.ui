@@ -226,6 +226,16 @@
               </property>
              </widget>
             </item>
+            <item row="7" column="1">
+             <widget class="QCheckBox" name="ignoreNumpadCandidateShortcutCheckBox">
+              <property name="toolTip">
+               <string>候補一覧が出ているとき、テンキーの数字は候補の選択に使わず、数字として入力します（選んでいた候補で確定してから入力）。キーボード上の段の数字では、今まで通り候補を選べます。</string>
+              </property>
+              <property name="text">
+               <string>テンキーの数字で候補を選ばない</string>
+              </property>
+             </widget>
+            </item>
             <item row="3" column="0">
              <widget class="QLabel" name="yenSignLabel">
               <property name="text">
@@ -1543,7 +1553,7 @@
                      <string>打っている途中や変換中に Option+Tab を押すと、ローカルの AI（Zenz）が前後の文脈をふまえて文全体を変換し直します。もう一度 Option+Tab か Space で元の変換に戻ります。ライブ変換は使いません。</string>
                     </property>
                     <property name="text">
-                     <string>AI変換を使う（変換候補に AI の候補を追加・Option+Tab で AI 版に差し替え）</string>
+                     <string>AI変換を使う</string>
                     </property>
                    </widget>
                   </item>
@@ -3131,6 +3141,81 @@
           </widget>
          </item>
          <item>
+          <widget class="QFrame" name="updateCheckHeader">
+           <property name="frameShape">
+            <enum>QFrame::Shape::NoFrame</enum>
+           </property>
+           <layout class="QHBoxLayout" name="updateCheckHeaderLayout">
+            <property name="leftMargin">
+             <number>9</number>
+            </property>
+            <property name="topMargin">
+             <number>9</number>
+            </property>
+            <property name="rightMargin">
+             <number>9</number>
+            </property>
+            <property name="bottomMargin">
+             <number>9</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="updateCheckHeaderLabel">
+              <property name="text">
+               <string>アップデート</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="Line" name="updateCheckHeaderLine">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="updateCheckGroup">
+           <property name="frameShape">
+            <enum>QFrame::Shape::NoFrame</enum>
+           </property>
+           <layout class="QVBoxLayout" name="updateCheckLayout">
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="leftMargin">
+             <number>24</number>
+            </property>
+            <property name="topMargin">
+             <number>9</number>
+            </property>
+            <property name="rightMargin">
+             <number>24</number>
+            </property>
+            <property name="bottomMargin">
+             <number>9</number>
+            </property>
+            <item>
+             <widget class="QCheckBox" name="updateCheckCheckBox">
+              <property name="text">
+               <string>Mozlumi のアップデートを1日1回確認する（GitHub に問い合わせます）</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
           <spacer name="privacyTabBottomSpacer">
            <property name="orientation">
             <enum>Qt::Orientation::Vertical</enum>
@@ -3789,6 +3874,7 @@
   <tabstop>spaceCharacterFormComboBox</tabstop>
   <tabstop>selectionShortcutModeComboBox</tabstop>
   <tabstop>numpadCharacterFormComboBox</tabstop>
+  <tabstop>ignoreNumpadCandidateShortcutCheckBox</tabstop>
   <tabstop>keymapSettingComboBox</tabstop>
   <tabstop>editKeymapButton</tabstop>
   <tabstop>editRomanTableButton</tabstop>
@@ -3882,6 +3968,7 @@
   <tabstop>suggestionsSizeSpinBox</tabstop>
   <tabstop>incognitoModeCheckBox</tabstop>
   <tabstop>presentationModeCheckBox</tabstop>
+  <tabstop>updateCheckCheckBox</tabstop>
   <tabstop>setDefaultImeButton</tabstop>
   <tabstop>restoreDefaultImeButton</tabstop>
   <tabstop>IMEHotKeyDisabledCheckBox</tabstop>

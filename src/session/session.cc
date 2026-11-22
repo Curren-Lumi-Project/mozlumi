@@ -4269,6 +4269,19 @@ bool Session::MaybeSelectCandidate(commands::Command* command) {
     return false;
   }
 
+  // Mozlumi: numpad digits are typed as digits instead of selecting a
+  // candidate. TransformInput() has already turned a numpad key into an
+  // ordinary digit key, but KeyEventTransformer always sets input_style for
+  // numpad keys, while keys from the main keyboard row leave it unset. Spaces
+  // inserted by InsertSpace*() also set it, but a space is not a shortcut.
+  if (context_->GetConfig().ignore_numpad_candidate_shortcut()) {
+    const commands::KeyEvent& key = command->input().key();
+    if (key.has_input_style() && key.has_key_code() &&
+        key.key_code() >= '0' && key.key_code() <= '9') {
+      return false;
+    }
+  }
+
   // Note that SHORTCUT_ASDFGHJKL should be handled even when the CapsLock is
   // enabled. This is why we need to normalize the key event here.
   // See b/5655743.

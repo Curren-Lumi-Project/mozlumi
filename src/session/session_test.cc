@@ -838,6 +838,35 @@ class SessionTest : public testing::TestWithTempUserProfile {
     Mock::VerifyAndClearExpectations(converter);
   }
 
+  // Mozlumi: starts "あいうえお" conversion with the candidate list shown and
+  // the second candidate "アイウエオ" focused (shortcuts: 1 = あいうえお,
+  // 2 = アイウエオ).
+  void StartAiueoConversionWithCandidateList(Session* session,
+                                             MockConverter* converter,
+                                             const config::Config& config) {
+    session->SetConfig(config);
+    InitSessionToPrecomposition(session);
+
+    Segments segments;
+    SetAiueo(&segments);
+    const ConversionRequest request = CreateConversionRequest(*session);
+    FillT13Ns(request, &segments);
+    EXPECT_CALL(*converter, StartConversion(_, _))
+        .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+
+    commands::Command command;
+    InsertCharacterChars("aiueo", session, &command);
+    command.Clear();
+    session->Convert(&command);
+    command.Clear();
+    SendSpecialKey(commands::KeyEvent::SPACE, session, &command);
+    ASSERT_TRUE(command.output().has_candidate_window());
+    const commands::CandidateWindow& candidate_window =
+        command.output().candidate_window();
+    EXPECT_EQ(candidate_window.candidate(0).annotation().shortcut(), "1");
+    EXPECT_EQ(candidate_window.candidate(1).annotation().shortcut(), "2");
+  }
+
   std::shared_ptr<MockConverter> CreateEngineConverterMock(
       MockEngine* mock_engine) {
     auto mock_converter = std::make_shared<MockConverter>();
@@ -16327,6 +16356,63 @@ TEST_F(SessionTest, NumpadKey) {
   EXPECT_TRUE(SendKey("Decimal", &session, &command));
   EXPECT_TRUE(SendKey("Decimal", &session, &command));
   EXPECT_SINGLE_SEGMENT_AND_KEY("０//--..", "０//--..", command);
+}
+
+// Mozlumi: by default, a numpad digit commits the focused candidate and is
+// typed as a digit instead of selecting a candidate.
+TEST_F(SessionTest, NumpadDigitIsTypedWhileCandidateListIsShown) {
+  config::Config config;
+  EXPECT_TRUE(config.ignore_numpad_candidate_shortcut());
+  config.set_selection_shortcut(config::Config::SHORTCUT_123456789);
+  config.set_numpad_character_form(config::Config::NUMPAD_HALF_WIDTH);
+
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+  Session session(engine);
+  StartAiueoConversionWithCandidateList(&session, converter.get(), config);
+
+  commands::Command command;
+  EXPECT_TRUE(SendKey("Numpad1", &session, &command));
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_RESULT("アイウエオ", command);
+  EXPECT_EQ(GetComposition(command), "1");
+}
+
+// Mozlumi: digits on the main keyboard row still select a candidate.
+TEST_F(SessionTest, MainRowDigitSelectsCandidateWhenNumpadIsIgnored) {
+  config::Config config;
+  config.set_selection_shortcut(config::Config::SHORTCUT_123456789);
+  config.set_ignore_numpad_candidate_shortcut(true);
+
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+  Session session(engine);
+  StartAiueoConversionWithCandidateList(&session, converter.get(), config);
+
+  commands::Command command;
+  EXPECT_TRUE(SendKey("1", &session, &command));
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_FALSE(command.output().has_result());
+  EXPECT_EQ(GetComposition(command), "あいうえお");
+}
+
+// Mozlumi: with the setting off, numpad digits select a candidate as before.
+TEST_F(SessionTest, NumpadDigitSelectsCandidateWhenSettingIsOff) {
+  config::Config config;
+  config.set_selection_shortcut(config::Config::SHORTCUT_123456789);
+  config.set_numpad_character_form(config::Config::NUMPAD_HALF_WIDTH);
+  config.set_ignore_numpad_candidate_shortcut(false);
+
+  MockEngine engine;
+  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
+  Session session(engine);
+  StartAiueoConversionWithCandidateList(&session, converter.get(), config);
+
+  commands::Command command;
+  EXPECT_TRUE(SendKey("Numpad1", &session, &command));
+  EXPECT_TRUE(command.output().consumed());
+  EXPECT_FALSE(command.output().has_result());
+  EXPECT_EQ(GetComposition(command), "あいうえお");
 }
 
 TEST_F(SessionTest, KanaSymbols) {

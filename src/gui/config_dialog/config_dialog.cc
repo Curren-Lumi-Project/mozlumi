@@ -320,21 +320,47 @@ void SetUpdateCheckEnabled(bool enabled) {
 }
 #endif  // __APPLE__ || _WIN32
 
-// Mozlumi: inserts `box` right after `anchor` in the layout that holds it.
-void InsertCheckBoxAfter(QWidget *anchor, QCheckBox *box) {
+// Mozlumi: inserts `widget` right after `anchor` in the layout that holds it.
+void InsertWidgetAfter(QWidget *anchor, QWidget *widget) {
   QWidget *parent = anchor->parentWidget();
   for (QLayout *layout : parent->findChildren<QLayout *>()) {
     if (QBoxLayout *box_layout = qobject_cast<QBoxLayout *>(layout)) {
       const int index = box_layout->indexOf(anchor);
       if (index >= 0) {
-        box_layout->insertWidget(index + 1, box);
+        box_layout->insertWidget(index + 1, widget);
         return;
       }
     }
   }
   if (QLayout *layout = parent->layout()) {
-    layout->addWidget(box);
+    layout->addWidget(widget);
   }
+}
+
+// Mozlumi: a small, wrapping explanation right under `check_box`, aligned
+// with the check box text. Long explanations go here instead of into the
+// check box text, which does not wrap and would widen the settings page.
+QLabel *InsertDescriptionAfter(QCheckBox *check_box, const QString &text) {
+  auto *label = new QLabel(text, check_box->parentWidget());
+  label->setObjectName(check_box->objectName() +
+                       QStringLiteral("Description"));
+  label->setWordWrap(true);
+  label->setTextFormat(Qt::PlainText);
+  label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  QFont font = label->font();
+  if (font.pointSizeF() > 0) {
+    font.setPointSizeF(std::max(8.0, font.pointSizeF() - 1.0));
+  } else if (font.pixelSize() > 0) {
+    font.setPixelSize(std::max(10, font.pixelSize() - 1));
+  }
+  label->setFont(font);
+  const QStyle *style = check_box->style();
+  const int indent =
+      style->pixelMetric(QStyle::PM_IndicatorWidth, nullptr, check_box) +
+      style->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, nullptr, check_box);
+  label->setContentsMargins(indent, 0, 0, 2);
+  InsertWidgetAfter(check_box, label);
+  return label;
 }
 #ifdef _WIN32
 void NotifyDisplayAttributeUpdate();
@@ -733,29 +759,46 @@ ConfigDialog::ConfigDialog()
 
   InitializeCandidateRubyFontComboBox(candidateRubyFontComboBox);
 
-  // Mozlumi: AI candidate placement, next to the AI conversion switch.
-  ai_candidate_first_checkbox_ = new QCheckBox(
-      QString::fromUtf8("AI の変換が違うときは、AI の候補を 1 番目にする"
-                        "（オフ: 2 番目に入れて「AI候補あり」と表示）"),
-      aiConversionCheckBox->parentWidget());
-  InsertCheckBoxAfter(aiConversionCheckBox, ai_candidate_first_checkbox_);
-
+  // Mozlumi: AI conversion. The check box texts stay short; the details go
+  // into small wrapping descriptions so that the page does not get wider than
+  // the window (the check box text itself never wraps).
+  QString ai_conversion_description = QString::fromUtf8(
+      "変換候補に AI の候補を追加します。"
+      "Option+Tab で AI 版に差し替えます。");
 #ifdef _WIN32
   // Mozlumi: Option+Tab is Alt+Tab on Windows, which Windows takes for itself.
   // The keymaps also bind Ctrl+Tab, so show that key here.
+  ai_conversion_description.replace(QStringLiteral("Option+Tab"),
+                                    QStringLiteral("Ctrl+Tab"));
   aiConversionCheckBox->setText(aiConversionCheckBox->text().replace(
       QStringLiteral("Option+Tab"), QStringLiteral("Ctrl+Tab")));
   aiConversionCheckBox->setToolTip(aiConversionCheckBox->toolTip().replace(
       QStringLiteral("Option+Tab"), QStringLiteral("Ctrl+Tab")));
 #endif  // _WIN32
+  QLabel *ai_conversion_description_label =
+      InsertDescriptionAfter(aiConversionCheckBox, ai_conversion_description);
+
+  // Mozlumi: AI candidate placement, next to the AI conversion switch.
+  ai_candidate_first_checkbox_ = new QCheckBox(
+      QString::fromUtf8("AI の変換が違うときは、AI の候補を 1 番目にする"),
+      aiConversionCheckBox->parentWidget());
+  ai_candidate_first_checkbox_->setObjectName(
+      QStringLiteral("aiCandidateFirstCheckBox"));
+  InsertWidgetAfter(ai_conversion_description_label,
+                    ai_candidate_first_checkbox_);
+  InsertDescriptionAfter(
+      ai_candidate_first_checkbox_,
+      QString::fromUtf8("オフのときは 2 番目の候補に入れて、"
+                        "「AI候補あり」と表示します。"));
 
 #if defined(__APPLE__) || defined(_WIN32)
-  // Mozlumi: daily update check, next to the other privacy options.
-  update_check_checkbox_ = new QCheckBox(
-      QString::fromUtf8(
-          "Mozlumi のアップデートを1日1回確認する（GitHub に問い合わせます）"),
-      presentationModeCheckBox->parentWidget());
-  InsertCheckBoxAfter(presentationModeCheckBox, update_check_checkbox_);
+  // Mozlumi: daily update check, under its own "Update" heading in the
+  // Privacy tab.
+  update_check_checkbox_ = updateCheckCheckBox;
+#else   // __APPLE__ || _WIN32
+  // The updater exists only on macOS and Windows.
+  updateCheckHeader->hide();
+  updateCheckGroup->hide();
 #endif  // __APPLE__ || _WIN32
 
   // Event handlers to update 'Apply' button state.
@@ -858,14 +901,32 @@ ConfigDialog::ConfigDialog()
   const auto synchronize_minimum_width = [](QScrollArea* area,
                                             QWidget* contents,
                                             QVBoxLayout* layout) {
+    // Mozlumi: widgets added or changed by code (the AI options, hidden rows,
+    // translations) reach the parent layouts only when the event loop runs,
+    // so activating `layout` alone used a stale, too small width and the page
+    // got a horizontal scroll bar with its right side cut off. Recalculate the
+    // nested layouts first, innermost first.
+    const QList<QWidget*> children = contents->findChildren<QWidget*>();
+    for (auto it = children.crbegin(); it != children.crend(); ++it) {
+      if (QLayout* child_layout = (*it)->layout()) {
+        child_layout->invalidate();
+        child_layout->activate();
+      }
+    }
     layout->invalidate();
     layout->activate();
     const int content_width = contents->minimumSizeHint().width();
     if (content_width > 0) {
       const int scrollbar_width =
           area->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, area);
-      area->setMinimumWidth(content_width + scrollbar_width +
-                            2 * area->frameWidth());
+      int minimum_width =
+          content_width + scrollbar_width + 2 * area->frameWidth();
+      // Never ask for more than the screen can show.
+      if (const QScreen* screen = QGuiApplication::primaryScreen()) {
+        minimum_width = std::min(
+            minimum_width, screen->availableGeometry().width() * 9 / 10);
+      }
+      area->setMinimumWidth(minimum_width);
     }
   };
   synchronize_minimum_width(inputSupportScrollArea,
@@ -6219,6 +6280,8 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
                selection_shortcut);
   SET_COMBOBOX(numpadCharacterFormComboBox, NumpadCharacterForm,
                numpad_character_form);
+  SET_CHECKBOX(ignoreNumpadCandidateShortcutCheckBox,
+               ignore_numpad_candidate_shortcut);
   SET_COMBOBOX(keymapSettingComboBox, SessionKeymap, session_keymap);
 
   custom_keymap_table_ = config.custom_keymap_table();
@@ -6635,6 +6698,8 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
                selection_shortcut);
   GET_COMBOBOX(numpadCharacterFormComboBox, NumpadCharacterForm,
                numpad_character_form);
+  GET_CHECKBOX(ignoreNumpadCandidateShortcutCheckBox,
+               ignore_numpad_candidate_shortcut);
   GET_COMBOBOX(keymapSettingComboBox, SessionKeymap, session_keymap);
 
   config->set_custom_keymap_table(custom_keymap_table_);

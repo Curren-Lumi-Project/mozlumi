@@ -763,6 +763,11 @@ message Config {
   // Mozlumi: when the AI conversion differs from the normal conversion, make
   // it the top candidate instead of the second one.
   optional bool ai_candidate_first = 5002 [default = false];
+  // Mozlumi: while the candidate list is shown, digits from the numpad are
+  // typed as digits (the focused candidate is committed first) instead of
+  // selecting a candidate. Digits on the main keyboard row still select
+  // candidates by the selection shortcut.
+  optional bool ignore_numpad_candidate_shortcut = 5003 [default = true];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;
