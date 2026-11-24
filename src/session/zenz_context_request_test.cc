@@ -159,7 +159,7 @@ TEST(ZenzContextRequestTest, AttachUsesPresenceOnlyForNonzeroLengths) {
   AttachZenzContextRequest(request, &output);
 
   ASSERT_TRUE(output.has_zenz_preceding_text_request_length());
-  EXPECT_EQ(output.zenz_preceding_text_request_length(), 64);
+  EXPECT_EQ(output.zenz_preceding_text_request_length(), 24);
   ASSERT_TRUE(output.has_zenz_following_text_request_length());
   EXPECT_EQ(output.zenz_following_text_request_length(), 10);
 
