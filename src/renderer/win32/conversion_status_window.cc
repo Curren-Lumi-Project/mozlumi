@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "config/config_handler.h"
 #include "base/win32/win_util.h"
@@ -107,8 +109,49 @@ int StatusFontHeightPx(
   return std::max(1, std::max(minimum, base - reduction));
 }
 
+// Mozlumi: Output.ai_candidate_hint is UTF-8. An invalid or too long value
+// is not shown, and the badge keeps the plain label.
+std::wstring Utf8ToWideOrEmpty(const std::string& utf8) {
+  if (utf8.empty() || utf8.size() > 256) return L"";
+  const int length = ::MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+      static_cast<int>(utf8.size()), nullptr, 0);
+  if (length <= 0) return L"";
+  std::wstring wide(static_cast<size_t>(length), L'\0');
+  if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                            static_cast<int>(utf8.size()), wide.data(),
+                            length) != length) {
+    return L"";
+  }
+  return wide;
+}
+
+// Mozlumi: the vertical badge draws one character per line. A character
+// outside the BMP (a UTF-16 surrogate pair, e.g. in the AI hint) is kept
+// together as one line.
+std::vector<std::wstring_view> SplitStatusGlyphs(const std::wstring& text) {
+  std::vector<std::wstring_view> glyphs;
+  for (size_t i = 0; i < text.size();) {
+    size_t length = 1;
+    if (text[i] >= 0xD800 && text[i] <= 0xDBFF && i + 1 < text.size() &&
+        text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF) {
+      length = 2;
+    }
+    glyphs.emplace_back(text.data() + i, length);
+    i += length;
+  }
+  return glyphs;
+}
+
+// Mozlumi: the longest badge, as on macOS (360 points). Settings are in DIPs,
+// but this window is DPI-aware, so the limit follows the monitor DPI.
+int MaxStatusLengthPx(uint32_t dpi) {
+  return std::max(360, ::MulDiv(360, static_cast<int>(dpi), 96));
+}
+
 std::wstring StatusText(ConversionDisplayStatus state,
-    config::Config::ConversionStatusIndicatorLabel label) {
+    config::Config::ConversionStatusIndicatorLabel label,
+    const std::string& ai_hint) {
   if (label == config::Config::CONVERSION_STATUS_COLOR_ONLY) return L"";
   if (label == config::Config::CONVERSION_STATUS_SYMBOL) {
     switch (state) {
@@ -125,7 +168,13 @@ std::wstring StatusText(ConversionDisplayStatus state,
     case ConversionDisplayStatus::kMozc: return L"Mozlumi";
     case ConversionDisplayStatus::kZenzPending: return L"AI…";
     case ConversionDisplayStatus::kZenz: return L"AI";
-    case ConversionDisplayStatus::kAiCandidate: return L"AI候補あり";
+    case ConversionDisplayStatus::kAiCandidate: {
+      // Mozlumi: the differing AI words, so that they can be seen before
+      // committing (same as the macOS badge).
+      const std::wstring hint = Utf8ToWideOrEmpty(ai_hint);
+      if (hint.empty()) return L"AI候補あり";
+      return L"AI候補\uFF1A" + hint;
+    }
     case ConversionDisplayStatus::kTypoCandidate: return L"補正あり";
     case ConversionDisplayStatus::kReading: return L"入力中";
     default: return L"";
@@ -136,11 +185,12 @@ std::wstring StatusText(ConversionDisplayStatus state,
 // truncated on non-100% DPI displays. The circle always has fixed diameter.
 int RecommendedWidth(HWND hwnd, uint32_t dpi, int height,
                      const config::Config::ConversionStatusIndicatorStyle& style,
-                     ConversionDisplayStatus state) {
+                     ConversionDisplayStatus state,
+                     const std::string& ai_hint) {
   const int minimum = std::clamp(::MulDiv(static_cast<int>(style.width()),
                                            static_cast<int>(dpi), 96), 12, 240);
   if (style.shape() == config::Config::CONVERSION_STATUS_CIRCLE) return height;
-  const std::wstring label = StatusText(state, style.label());
+  const std::wstring label = StatusText(state, style.label(), ai_hint);
   if (label.empty()) return minimum;
   HDC dc = ::GetDC(hwnd);
   if (!dc) return minimum;
@@ -161,12 +211,13 @@ int RecommendedWidth(HWND hwnd, uint32_t dpi, int height,
   const int padding = style.label() == config::Config::CONVERSION_STATUS_FULL_LABEL
                           ? 28 : 16;
   return std::clamp(std::max(minimum, static_cast<int>(measured.cx) +
-      ::MulDiv(padding, static_cast<int>(dpi), 96)), 12, 360);
+      ::MulDiv(padding, static_cast<int>(dpi), 96)), 12,
+      MaxStatusLengthPx(dpi));
 }
 
-// Vertical badges show each Unicode BMP glyph upright from top to bottom.
-// All current status labels are BMP; the size is based on glyph line height,
-// rather than a horizontal text measurement.
+// Vertical badges show each character upright from top to bottom (see
+// SplitStatusGlyphs). The size is based on glyph line height, rather than a
+// horizontal text measurement.
 int VerticalTextStep(uint32_t dpi,
     const config::Config::ConversionStatusIndicatorStyle& style) {
   return std::max(1, StatusFontHeightPx(style, dpi, true) +
@@ -175,20 +226,21 @@ int VerticalTextStep(uint32_t dpi,
 
 int RecommendedVerticalHeight(uint32_t dpi, int thickness,
     const config::Config::ConversionStatusIndicatorStyle& style,
-    ConversionDisplayStatus state) {
+    ConversionDisplayStatus state, const std::string& ai_hint) {
   if (style.shape() == config::Config::CONVERSION_STATUS_CIRCLE) {
     return thickness;
   }
   const int minimum = std::clamp(::MulDiv(
       static_cast<int>(style.width()), static_cast<int>(dpi), 96), 12, 240);
-  const std::wstring label = StatusText(state, style.label());
+  const std::wstring label = StatusText(state, style.label(), ai_hint);
   if (label.empty()) return minimum;
   const int dot_padding = style.label() == config::Config::CONVERSION_STATUS_FULL_LABEL
       ? ::MulDiv(18, static_cast<int>(dpi), 96) : 0;
   const int margin = ::MulDiv(12, static_cast<int>(dpi), 96);
   return std::clamp(std::max(minimum,
-      static_cast<int>(label.size()) * VerticalTextStep(dpi, style) +
-      dot_padding + margin), 12, 360);
+      static_cast<int>(SplitStatusGlyphs(label).size()) *
+          VerticalTextStep(dpi, style) +
+      dot_padding + margin), 12, MaxStatusLengthPx(dpi));
 }
 
 bool ReadAnchor(const commands::RendererCommand& command,
@@ -245,6 +297,7 @@ void ConversionStatusWindow::Hide() {
   shadow_.Hide();
   if (IsWindow()) ShowWindow(SW_HIDE);
   status_ = ConversionDisplayStatus::kHidden;
+  ai_hint_.clear();
   last_rect_valid_ = false;
 }
 void ConversionStatusWindow::RaiseWithoutActivation() {
@@ -275,6 +328,7 @@ void ConversionStatusWindow::OnUpdate(
     return;
   }
   const auto& next_style = settings->conversion_status_indicator_style();
+  const std::string& next_ai_hint = command.output().ai_candidate_hint();
   POINT anchor{};
   int line_height = 0;
   if (!ReadAnchor(command, layout, &anchor, &line_height)) {
@@ -300,10 +354,12 @@ void ConversionStatusWindow::OnUpdate(
       static_cast<int>(next_style.height()), static_cast<int>(dpi_), 96), 12, 100);
   if (vertical) {
     width_ = thickness;
-    height_ = RecommendedVerticalHeight(dpi_, thickness, next_style, state);
+    height_ = RecommendedVerticalHeight(dpi_, thickness, next_style, state,
+                                        next_ai_hint);
   } else {
     height_ = thickness;
-    width_ = RecommendedWidth(m_hWnd, dpi_, height_, next_style, state);
+    width_ = RecommendedWidth(m_hWnd, dpi_, height_, next_style, state,
+                              next_ai_hint);
   }
   const Rect preedit = vertical
       ? Rect(anchor.x - line_height, anchor.y, line_height, line_height)
@@ -331,10 +387,11 @@ void ConversionStatusWindow::OnUpdate(
     Hide();
     return;
   }
-  const bool repaint = status_ != state ||
+  const bool repaint = status_ != state || ai_hint_ != next_ai_hint ||
       style_.SerializeAsString() != next_style.SerializeAsString();
   const bool was_visible = IsWindowVisible();
   status_ = state;
+  ai_hint_ = next_ai_hint;
   style_.CopyFrom(next_style);
   vertical_ = vertical;
   const int radius = CornerRadiusPx(style_, dpi_, width_, height_);
@@ -413,7 +470,7 @@ void ConversionStatusWindow::DoPaint(HDC dc) {
   const auto label = style_.shape() == config::Config::CONVERSION_STATUS_CIRCLE &&
                      style_.label() == config::Config::CONVERSION_STATUS_FULL_LABEL
       ? config::Config::CONVERSION_STATUS_SYMBOL : style_.label();
-  const std::wstring text = StatusText(status_, label);
+  const std::wstring text = StatusText(status_, label, ai_hint_);
   if (!text.empty()) {
     const int font_height = StatusFontHeightPx(style_, dpi_, vertical_);
     const std::wstring family = StatusFontFamily(style_);
@@ -430,13 +487,15 @@ void ConversionStatusWindow::DoPaint(HDC dc) {
     if (vertical_ && style_.shape() != config::Config::CONVERSION_STATUS_CIRCLE) {
       const int step = VerticalTextStep(dpi_, style_);
       const int dot_gap = show_dot ? ::MulDiv(18, static_cast<int>(dpi_), 96) : 0;
-      const int text_height = static_cast<int>(text.size()) * step;
+      const std::vector<std::wstring_view> glyphs = SplitStatusGlyphs(text);
+      const int text_height = static_cast<int>(glyphs.size()) * step;
       const int top = std::max(0, (height_ - text_height - dot_gap) / 2);
       // The status dot is drawn with analytic pixel coverage after GdiFlush.
-      for (size_t i = 0; i < text.size(); ++i) {
+      for (size_t i = 0; i < glyphs.size(); ++i) {
         const int y = top + dot_gap + static_cast<int>(i) * step;
         RECT glyph_rect{0, y, width_, y + step};
-        DrawTextW(dc, text.c_str() + i, 1, &glyph_rect,
+        DrawTextW(dc, glyphs[i].data(), static_cast<int>(glyphs[i].size()),
+                  &glyph_rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
       }
     } else {
@@ -444,8 +503,10 @@ void ConversionStatusWindow::DoPaint(HDC dc) {
         label_rect.left += ::MulDiv(18, static_cast<int>(dpi_), 96);
         label_rect.right -= ::MulDiv(4, static_cast<int>(dpi_), 96);
       }
+      // Mozlumi: a long AI hint ends with "…" rather than being cut off.
       DrawTextW(dc, text.c_str(), -1, &label_rect,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX |
+                    DT_END_ELLIPSIS);
     }
     SelectObject(dc, previous_font);
     DeleteObject(font);
@@ -487,7 +548,7 @@ bool ConversionStatusWindow::RenderAndPresent() {
               style_.label() == config::Config::CONVERSION_STATUS_FULL_LABEL
           ? config::Config::CONVERSION_STATUS_SYMBOL
           : style_.label();
-  const std::wstring text = StatusText(status_, label);
+  const std::wstring text = StatusText(status_, label, ai_hint_);
   if (!text.empty() && label == config::Config::CONVERSION_STATUS_FULL_LABEL &&
       style_.shape() != config::Config::CONVERSION_STATUS_CIRCLE) {
     const int dot_radius = std::max(2, ::MulDiv(3, static_cast<int>(dpi_), 96));
@@ -497,7 +558,7 @@ bool ConversionStatusWindow::RenderAndPresent() {
       const int step = VerticalTextStep(dpi_, style_);
       const int gap = ::MulDiv(18, static_cast<int>(dpi_), 96);
       const int top = std::max(0, (height_ -
-          static_cast<int>(text.size()) * step - gap) / 2);
+          static_cast<int>(SplitStatusGlyphs(text).size()) * step - gap) / 2);
       dot_x = width_ / 2;
       dot_y = top + gap / 2;
     }
