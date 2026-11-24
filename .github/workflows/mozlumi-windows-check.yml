@@ -1,0 +1,199 @@
+name: Mozlumi Windows compile check (manual)
+
+# Mozlumi: 直した部分だけを Windows でコンパイル（またはテスト）して確かめる。
+# 手動でだけ動かす（push では動かない）。
+#
+# - 手動で動かすには、このファイルが既定のブランチ（main）にある必要がある。
+#   確かめるブランチ・タグ・コミットは、実行するときに「ref」で選ぶ。
+# - Qt と MSI は作らない。なので、Qt を使う部分（//gui/...）は確かめられない
+#   （//gui は Mac でもコンパイルされるので、そちらで確かめる）。
+# - 道具（LLVM 20.1.1 と Visual Studio 2022）は mozlumi-windows-build.yml と同じ。
+#   ビルドの設定も同じ（build は --config release_build、test は -c dbg）。
+# - 速くするために、Bazel の作ったもの（disk cache）と、取ってきた外部の
+#   ソース（repository cache）をキャッシュに残す。キャッシュの名前は
+#   MODULE.bazel などが変わらない限り同じで、ないときだけ保存する。
+#   1 回目は土台のライブラリ（abseil、protobuf など）を作るので長くなる。
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '確かめるブランチ・タグ・コミット'
+        type: string
+        required: true
+        default: main
+      targets:
+        description: '確かめる Bazel のターゲット（空白で区切る。例: //renderer/win32:conversion_status_window）'
+        type: string
+        required: true
+      command:
+        description: 'build はコンパイルだけ。test はテストのターゲットを動かす'
+        type: choice
+        options:
+          - build
+          - test
+        default: build
+      with_dictionary:
+        description: '辞書を用意する（engine・session など辞書を使う部分のとき。時間がかかる）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mozlumi-windows-check-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check_x64:
+    name: Check (x64)
+    runs-on: windows-2022
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: false
+          persist-credentials: false
+
+      - name: Check the targets
+        id: targets
+        shell: pwsh
+        env:
+          CHECK_TARGETS: ${{ inputs.targets }}
+          SOURCE_REF: ${{ inputs.ref }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $targets = @($env:CHECK_TARGETS -split '\s+' | Where-Object { $_ -ne '' })
+          if ($targets.Count -eq 0) { throw 'No target was given.' }
+          foreach ($t in $targets) {
+            # Only plain Bazel labels such as //a/b:c or //a/b/... (no flags).
+            if ($t -notmatch '^//[A-Za-z0-9_./+-]*(:[A-Za-z0-9_./+-]+)?$') {
+              throw "Not a Bazel target: $t"
+            }
+          }
+          $commit = (git rev-parse HEAD).Trim()
+          Write-Host "Source:  $env:SOURCE_REF ($commit)"
+          Write-Host "Targets: $($targets -join ' ')"
+          "commit=$commit" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Prepare daily dictionary
+        if: ${{ inputs.with_dictionary }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\tools\dictionary\prepare_daily_dictionary.ps1
+
+      # Restore only: the full build (mozlumi-windows-build.yml) saves this
+      # cache with the Qt source in it. Do not save a cache without Qt here.
+      - name: Try to restore update_deps cache
+        uses: actions/cache/restore@v5
+        with:
+          path: src/third_party_cache
+          key: mozlumi-update_deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/build_tools/update_deps.py') }}
+
+      - name: Install Dependencies (without Qt and WiX)
+        shell: cmd
+        working-directory: .\src
+        run: |
+          python build_tools/update_deps.py --noqt --nowix
+
+      - name: Check Clang and use Visual Studio 2022
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $clang = '.\src\third_party\llvm\bin\clang-cl.exe'
+          if (-not (Test-Path -LiteralPath $clang -PathType Leaf)) {
+            throw 'clang-cl.exe was not found in src\third_party\llvm\bin.'
+          }
+          $clangVersion = & $clang --version
+          if ($LASTEXITCODE -ne 0 -or (($clangVersion -join ' ') -notmatch 'clang version 20\.')) {
+            throw "This workflow expects Clang 20 with Visual Studio 2022, got: $($clangVersion -join ' '). If LLVM was updated, switch the runner to windows-2025."
+          }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+            throw 'vswhere.exe was not found.'
+          }
+          $install = @(& $vswhere -latest -products '*' -version '[17.0,18.0)' -property installationPath)
+          if ($LASTEXITCODE -ne 0 -or $install.Count -ne 1 -or [string]::IsNullOrWhiteSpace($install[0])) {
+            throw 'Visual Studio 2022 was not found uniquely.'
+          }
+          $vc = Join-Path $install[0].Trim() 'VC'
+          if (-not (Test-Path -LiteralPath $vc -PathType Container)) {
+            throw "Visual Studio 2022 VC directory is missing: $vc"
+          }
+          "BAZEL_VC=$vc" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Clang:    $($clangVersion[0])"
+          Write-Host "BAZEL_VC: $vc"
+
+      - name: Restore the Bazel caches
+        id: bazel_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/mozlumi-bazel-cache
+          key: mozlumi-bazel-check-${{ runner.os }}-${{ runner.arch }}-vs2022-${{ hashFiles('src/MODULE.bazel', 'src/MODULE.bazel.lock', 'src/.bazelrc', 'src/build_tools/update_deps.py') }}
+
+      - name: Compile or test
+        id: check
+        shell: pwsh
+        working-directory: .\src
+        env:
+          ANDROID_NDK_HOME: ""
+          CHECK_TARGETS: ${{ inputs.targets }}
+          CHECK_COMMAND: ${{ inputs.command }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $targets = @($env:CHECK_TARGETS -split '\s+' | Where-Object { $_ -ne '' })
+          $cache = [string](Join-Path $env:RUNNER_TEMP 'mozlumi-bazel-cache')
+          $common = @("--disk_cache=$cache\disk", "--repository_cache=$cache\repo")
+          if ($env:CHECK_COMMAND -eq 'test') {
+            & bazelisk test -c dbg @common --test_output=errors @targets
+          } else {
+            & bazelisk build --config release_build @common @targets
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "bazelisk $env:CHECK_COMMAND failed (exit code $LASTEXITCODE)."
+          }
+
+      # Saved even when the check failed, so that the next run does not build
+      # the base libraries again. Only when there was no cache yet.
+      - name: Save the Bazel caches
+        if: ${{ always() && steps.bazel_cache.outputs.cache-hit != 'true' && (steps.check.outcome == 'success' || steps.check.outcome == 'failure') }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/mozlumi-bazel-cache
+          key: ${{ steps.bazel_cache.outputs.cache-primary-key }}
+
+      - name: Summary
+        if: ${{ always() && (steps.check.outcome == 'success' || steps.check.outcome == 'failure') }}
+        shell: pwsh
+        env:
+          SOURCE_REF: ${{ inputs.ref }}
+          SOURCE_COMMIT: ${{ steps.targets.outputs.commit }}
+          CHECK_TARGETS: ${{ inputs.targets }}
+          CHECK_COMMAND: ${{ inputs.command }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          $result = if ($env:CHECK_OUTCOME -eq 'success') { 'passed' } else { 'failed (see the "Compile or test" log)' }
+          $lines = @(
+            '### Mozlumi Windows compile check',
+            '',
+            "- ref: ``$($env:SOURCE_REF)`` (``$($env:SOURCE_COMMIT)``)",
+            "- $($env:CHECK_COMMAND): ``$($env:CHECK_TARGETS)``",
+            "- result: $result"
+          )
+          $lines -join "`n" | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
