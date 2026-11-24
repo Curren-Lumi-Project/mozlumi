@@ -54,7 +54,7 @@ TEST(ZenzContextRequestTest, AiConversionRequestsContextWithoutLiveConversion) {
   const ZenzContextRequest request =
       GetZenzContextRequest(config, commands::Context::NORMAL, true);
 
-  EXPECT_EQ(request.preceding_length, 24);
+  EXPECT_EQ(request.preceding_length, 64);
 }
 
 TEST(ZenzContextRequestTest, NonSnapshotStateRequestsNothing) {
@@ -86,7 +86,7 @@ TEST(ZenzContextRequestTest, UsesProtoDefaultLengths) {
   const ZenzContextRequest request =
       GetZenzContextRequest(config, commands::Context::NORMAL, true);
 
-  EXPECT_EQ(request.preceding_length, 24);
+  EXPECT_EQ(request.preceding_length, 64);
   EXPECT_EQ(request.following_length, 6);
 }
 
@@ -98,7 +98,7 @@ TEST(ZenzContextRequestTest, ExplicitRightContextLengthIsPreserved) {
   const ZenzContextRequest request =
       GetZenzContextRequest(config, commands::Context::NORMAL, true);
 
-  EXPECT_EQ(request.preceding_length, 24);
+  EXPECT_EQ(request.preceding_length, 64);
   EXPECT_EQ(request.following_length, 16);
 }
 
@@ -109,7 +109,7 @@ TEST(ZenzContextRequestTest, DisabledRightContextRequestsOnlyPreceding) {
   const ZenzContextRequest request =
       GetZenzContextRequest(config, commands::Context::NORMAL, true);
 
-  EXPECT_EQ(request.preceding_length, 24);
+  EXPECT_EQ(request.preceding_length, 64);
   EXPECT_EQ(request.following_length, 0);
 }
 
@@ -120,7 +120,7 @@ TEST(ZenzContextRequestTest, ExplicitlyEnabledRightContextUsesProtoDefaultLength
   const ZenzContextRequest request =
       GetZenzContextRequest(config, commands::Context::NORMAL, true);
 
-  EXPECT_EQ(request.preceding_length, 24);
+  EXPECT_EQ(request.preceding_length, 64);
   EXPECT_EQ(request.following_length, 6);
 }
 
@@ -159,7 +159,7 @@ TEST(ZenzContextRequestTest, AttachUsesPresenceOnlyForNonzeroLengths) {
   AttachZenzContextRequest(request, &output);
 
   ASSERT_TRUE(output.has_zenz_preceding_text_request_length());
-  EXPECT_EQ(output.zenz_preceding_text_request_length(), 24);
+  EXPECT_EQ(output.zenz_preceding_text_request_length(), 64);
   ASSERT_TRUE(output.has_zenz_following_text_request_length());
   EXPECT_EQ(output.zenz_following_text_request_length(), 10);
 

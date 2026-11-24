@@ -2274,6 +2274,13 @@ bool Session::SendCommand(commands::Command* command) {
     case commands::SessionCommand::RESUME_COMMAND_SEQUENCE:
       result = ResumeCommandSequence(command);
       break;
+    case commands::SessionCommand::FORGET_RECENT_COMMIT_CONTEXT:
+      // Mozlumi: sent by the client when the focus leaves this input. The
+      // recent commits belong to the previous field or window.
+      recent_commit_context_.Clear();
+      ZenzDebugOutput("[zenz] recent_commit cleared reason=focus_change");
+      result = DoNothing(command);
+      break;
 
     case commands::SessionCommand::RECONVERT_SELECTION_OR_INSERT_SPACE:
       // This command is a client-side callback command.  It should normally be

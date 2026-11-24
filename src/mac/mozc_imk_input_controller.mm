@@ -459,6 +459,16 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
   [self cancelDelayedSessionCommand];
 
+  // Mozlumi: when the focus moves to another window or text field, the text
+  // committed here is no longer the text before the cursor. Tell the session
+  // to forget it, so that the AI does not convert with the wrong context.
+  if (mozcClient_) {
+    SessionCommand forgetCommand;
+    forgetCommand.set_type(SessionCommand::FORGET_RECENT_COMMIT_CONTEXT);
+    Output forgetOutput;
+    mozcClient_->SendCommand(forgetCommand, &forgetOutput);
+  }
+
   RendererCommand clearCommand;
   clearCommand.set_type(RendererCommand::UPDATE);
   clearCommand.set_visible(false);

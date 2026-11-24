@@ -475,6 +475,11 @@ message SessionCommand {
     // Mozlumi: polls a pending AI conversion request made after an ordinary
     // conversion, and adds the AI result to the candidates.
     APPLY_AI_CANDIDATES = 32;
+
+    // Mozlumi: the input focus moved to another window or text field. The text
+    // committed just before is no longer the text before the cursor, so forget
+    // it and do not use it as the context of the next AI conversion.
+    FORGET_RECENT_COMMIT_CONTEXT = 33;
   }
   required CommandType type = 1;
 

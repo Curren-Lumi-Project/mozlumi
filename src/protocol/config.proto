@@ -370,7 +370,9 @@ message Config {
 
   // Maximum left context length in Unicode characters.
   // The runtime sanitizer may further drop this context when it looks sensitive.
-  optional uint32 zenz_live_correction_left_context_length = 1007 [default = 24];
+  // Mozlumi: 64 (Mozkey: 24). 24 characters were too short for the AI to follow
+  // the sentence. It matches the 64 characters kept as the recent commits.
+  optional uint32 zenz_live_correction_left_context_length = 1007 [default = 64];
 
   // Allow zenz output not found in Mozc candidates to be shown as a synthetic
   // live preedit. v0 uses this only for live preedit display, not dictionary
