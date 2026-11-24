@@ -793,7 +793,8 @@ ConfigDialog::ConfigDialog()
   // Mozlumi: the AI conversion becomes the top candidate only when Zenz finds
   // it clearly more likely (ai_candidate_auto_first).
   ai_candidate_auto_first_checkbox_ = new QCheckBox(
-      QString::fromUtf8("AI に自信があるときは、AI の候補を 1 番目にする"),
+      QString::fromUtf8("前の文の流れに AI の変換のほうが合うときは、"
+                        "AI の候補を 1 番目にする"),
       aiConversionCheckBox->parentWidget());
   ai_candidate_auto_first_checkbox_->setObjectName(
       QStringLiteral("aiCandidateAutoFirstCheckBox"));
@@ -801,9 +802,10 @@ ConfigDialog::ConfigDialog()
                     ai_candidate_auto_first_checkbox_);
   InsertDescriptionAfter(
       ai_candidate_auto_first_checkbox_,
-      QString::fromUtf8("前の文の流れから、AI の変換のほうがはっきり合っている"
-                        "ときだけ 1 番目にします。上の設定がオンのときは"
-                        "使いません。"));
+      QString::fromUtf8("前の文の流れをもとに、いつもの変換と AI の変換を"
+                        " AI が採点し、AI の変換の点数がはっきり高いときだけ"
+                        " 1 番目にします。判定が外れることもあります。"
+                        "上の設定がオンのときは使いません。"));
 
 #if defined(__APPLE__) || defined(_WIN32)
   // Mozlumi: daily update check, under its own "Update" heading in the
