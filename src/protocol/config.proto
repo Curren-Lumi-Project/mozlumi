@@ -370,7 +370,9 @@ message Config {
 
   // Maximum left context length in Unicode characters.
   // The runtime sanitizer may further drop this context when it looks sensitive.
-  optional uint32 zenz_live_correction_left_context_length = 1007 [default = 24];
+  // Mozlumi: 64 (Mozkey: 24). 24 characters were too short for the AI to follow
+  // the sentence. It matches the 64 characters kept as the recent commits.
+  optional uint32 zenz_live_correction_left_context_length = 1007 [default = 64];
 
   // Allow zenz output not found in Mozc candidates to be shown as a synthetic
   // live preedit. v0 uses this only for live preedit display, not dictionary
@@ -768,6 +770,11 @@ message Config {
   // selecting a candidate. Digits on the main keyboard row still select
   // candidates by the selection shortcut.
   optional bool ignore_numpad_candidate_shortcut = 5003 [default = true];
+  // Mozlumi: when the AI conversion differs, Zenz scores the normal conversion
+  // and the AI conversion with the same context, and the AI conversion becomes
+  // the top candidate only when it is clearly more likely. Ignored when
+  // ai_candidate_first is on.
+  optional bool ai_candidate_auto_first = 5004 [default = true];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;

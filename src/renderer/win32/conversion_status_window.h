@@ -5,6 +5,7 @@
 #include <atlbase.h>
 #include <atlwin.h>
 #include <cstdint>
+#include <string>
 
 #include "renderer/conversion_status_indicator.h"
 #include "renderer/win32/win32_renderer_util.h"
@@ -44,6 +45,8 @@ class ConversionStatusWindow : public ATL::CWindowImpl<
   int width_ = 0;
   int height_ = 0;
   bool vertical_ = false;
+  // Mozlumi: Output.ai_candidate_hint shown on the badge.
+  std::string ai_hint_;
   RECT last_rect_{};
   bool last_rect_valid_ = false;
 };

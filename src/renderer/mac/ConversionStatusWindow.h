@@ -1,6 +1,8 @@
 #ifndef MOZC_RENDERER_MAC_CONVERSION_STATUS_WINDOW_H_
 #define MOZC_RENDERER_MAC_CONVERSION_STATUS_WINDOW_H_
 
+#include <string>
+
 #include "protocol/renderer_command.pb.h"
 #include "renderer/conversion_status_indicator.h"
 #include "renderer/mac/RendererBaseWindow.h"
@@ -17,6 +19,8 @@ class ConversionStatusWindow : public RendererBaseWindow {
   ConversionDisplayStatus last_status_ = ConversionDisplayStatus::kHidden;
   config::Config::ConversionStatusIndicatorStyle last_style_;
   bool last_vertical_ = false;
+  // Mozlumi: Output.ai_candidate_hint shown on the badge.
+  std::string last_ai_hint_;
 };
 }  // namespace mozc::renderer::mac
 #endif

@@ -127,7 +127,7 @@ void ExpectMozkeyProductDefaults(const Config& config) {
   EXPECT_EQ(config.zenz_deferred_presentation_timeout_msec(), 250);
   EXPECT_EQ(config.zenz_live_correction_timeout_msec(), 180);
   EXPECT_EQ(config.zenz_live_correction_min_key_length(), 2);
-  EXPECT_EQ(config.zenz_live_correction_left_context_length(), 24);
+  EXPECT_EQ(config.zenz_live_correction_left_context_length(), 64);
   EXPECT_TRUE(config.use_zenz_synthetic_candidate());
   EXPECT_TRUE(config.use_zenz_feedback_learning());
   EXPECT_TRUE(config.use_zenz_feedback_recording());

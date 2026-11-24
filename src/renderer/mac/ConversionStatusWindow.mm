@@ -37,7 +37,8 @@ NSFont* StatusFont(
 }
 
 NSString* Label(ConversionDisplayStatus status,
-                config::Config::ConversionStatusIndicatorLabel mode) {
+                config::Config::ConversionStatusIndicatorLabel mode,
+                const std::string& ai_hint) {
   if (mode == config::Config::CONVERSION_STATUS_COLOR_ONLY) return @"";
   if (mode == config::Config::CONVERSION_STATUS_SYMBOL) {
     switch (status) {
@@ -54,7 +55,15 @@ NSString* Label(ConversionDisplayStatus status,
     case ConversionDisplayStatus::kMozc: return @"Mozlumi";
     case ConversionDisplayStatus::kZenzPending: return @"AI…";
     case ConversionDisplayStatus::kZenz: return @"AI";
-    case ConversionDisplayStatus::kAiCandidate: return @"AI候補あり";
+    case ConversionDisplayStatus::kAiCandidate: {
+      // Mozlumi: the differing AI words, so that they can be seen before
+      // committing.
+      NSString* hint = ai_hint.empty()
+          ? nil : [NSString stringWithUTF8String:ai_hint.c_str()];
+      return hint.length > 0
+          ? [NSString stringWithFormat:@"AI候補：%@", hint]
+          : @"AI候補あり";
+    }
     case ConversionDisplayStatus::kTypoCandidate: return @"補正あり";
     case ConversionDisplayStatus::kReading: return @"入力中";
     default: return @"";
@@ -181,7 +190,9 @@ bool ConversionStatusWindow::Update(const commands::RendererCommand& command,
   const auto& style = settings->conversion_status_indicator_style();
   if (!window_) InitWindow();
   if (!window_) return false;
+  const std::string& ai_hint = command.output().ai_candidate_hint();
   if (last_status_ == state && last_vertical_ == vertical &&
+      last_ai_hint_ == ai_hint &&
       last_style_.SerializeAsString() == style.SerializeAsString()) {
     return true;
   }
@@ -195,7 +206,7 @@ bool ConversionStatusWindow::Update(const commands::RendererCommand& command,
       style.shape() == config::Config::CONVERSION_STATUS_CIRCLE &&
       style.label() == config::Config::CONVERSION_STATUS_FULL_LABEL
           ? config::Config::CONVERSION_STATUS_SYMBOL : style.label();
-  NSString* displayed_title = Label(state, display_mode);
+  NSString* displayed_title = Label(state, display_mode, ai_hint);
   NSFont* display_font = StatusFont(style, vertical);
   if (style.shape() != config::Config::CONVERSION_STATUS_CIRCLE &&
       [displayed_title length] > 0) {
@@ -240,6 +251,7 @@ bool ConversionStatusWindow::Update(const commands::RendererCommand& command,
   last_status_ = state;
   last_style_.CopyFrom(style);
   last_vertical_ = vertical;
+  last_ai_hint_ = ai_hint;
   return true;
 }
 }  // namespace mozc::renderer::mac
