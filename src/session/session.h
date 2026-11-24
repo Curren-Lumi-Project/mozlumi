@@ -547,6 +547,21 @@ class Session {
     uint32_t poll_count = 0;
   };
   PendingTypoZenz pending_typo_zenz_;
+  // Mozlumi: compares the normal conversion and the AI conversion with Zenz
+  // (Config.ai_candidate_auto_first). `prepared` is set by the AI candidates
+  // and the request is submitted right after them.
+  struct PendingAiRank {
+    bool prepared = false;
+    bool pending = false;
+    uint32_t generation = 0;
+    std::string key;
+    std::string mozc_value;
+    std::string ai_value;
+    std::vector<engine::ExternalSegmentCandidate> changed;
+    absl::Time issued_at;
+    uint32_t poll_count = 0;
+  };
+  PendingAiRank pending_ai_rank_;
   // Mozlumi: recently committed text, Zenz's left context for applications
   // that do not provide surrounding text. Memory only.
   ZenzRecentCommitContext recent_commit_context_;
@@ -556,6 +571,8 @@ class Session {
   // Mozlumi: shown on the conversion status badge for the current conversion.
   enum class AiCandidateBadge { kNone, kAvailable, kApplied };
   AiCandidateBadge ai_candidate_badge_ = AiCandidateBadge::kNone;
+  // Mozlumi: the differing AI words shown on the badge (Output.ai_candidate_hint).
+  std::string ai_candidate_hint_;
 
   struct PendingZenzFeedback {
     enum class Action {
@@ -879,6 +896,12 @@ class Session {
   bool ApplyTypoZenz(commands::Command* command);
   void AttachTypoZenzPollCallback(commands::Command* command) const;
   void ClearTypoZenz();
+  // Mozlumi: Zenz compares the normal conversion and the AI conversion, and
+  // the AI conversion becomes the top candidate when it is clearly more likely.
+  void MaybeScheduleAiRank(commands::Command* command);
+  bool ApplyAiRank(commands::Command* command);
+  void AttachAiRankPollCallback(commands::Command* command) const;
+  void ClearAiRank();
   // Mozlumi: the client context for Zenz. When the application provided no
   // preceding text at all, recently committed text is used instead
   // (`*from_recent_commit` tells which).

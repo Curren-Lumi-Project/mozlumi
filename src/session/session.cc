@@ -2314,6 +2314,7 @@ bool Session::SendCommand(commands::Command* command) {
   if (context_->state() != ImeContext::CONVERSION) {
     ClearAiCandidates();
     ai_candidate_badge_ = AiCandidateBadge::kNone;
+    ai_candidate_hint_.clear();
     live_conversion_active_ = false;
     live_conversion_from_composition_ = false;
     manual_zenz_commit_on_next_input_ = false;
@@ -2489,6 +2490,7 @@ bool Session::SendKey(commands::Command* command) {
   if (context_->state() != ImeContext::CONVERSION) {
     ClearAiCandidates();
     ai_candidate_badge_ = AiCandidateBadge::kNone;
+    ai_candidate_hint_.clear();
     live_conversion_active_ = false;
     live_conversion_from_composition_ = false;
     manual_zenz_commit_on_next_input_ = false;
@@ -7204,6 +7206,7 @@ bool Session::ForceZenzLiveCorrection(
   // The explicit replacement supersedes a pending AI-candidates request.
   ClearAiCandidates();
   ai_candidate_badge_ = AiCandidateBadge::kNone;
+  ai_candidate_hint_.clear();
   // Explicit user action. Build a regular Mozc conversion as the baseline,
   // then run the existing asynchronous Zenz validation/adoption pipeline.
   // A manual request must never convert or export a password preedit.
@@ -7711,7 +7714,9 @@ void Session::AttachAiCandidatesPollCallback(
 void Session::MaybeScheduleAiCandidates(commands::Command* command) {
   ClearAiCandidates();
   ClearTypoZenz();
+  ClearAiRank();
   ai_candidate_badge_ = AiCandidateBadge::kNone;
+  ai_candidate_hint_.clear();
   const config::Config& config = context_->GetConfig();
   if (!config.use_ai_conversion() ||
       context_->state() != ImeContext::CONVERSION ||
@@ -7808,12 +7813,30 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
           pending_typo_zenz_.generation) {
     return ApplyTypoZenz(command);
   }
+  // Mozlumi: the AI rank shares the callback type too. The typo scoring goes
+  // after it.
+  if (pending_ai_rank_.pending &&
+      command->input().command().live_conversion_generation() ==
+          pending_ai_rank_.generation) {
+    const bool result = ApplyAiRank(command);
+    if (!pending_ai_rank_.pending && !command->output().has_callback()) {
+      MaybeScheduleTypoZenz(command);
+    }
+    return result;
+  }
   const bool was_pending = pending_ai_candidates_.pending;
   const bool result = ApplyAiCandidatesInternal(command);
-  // The AI candidate is done (applied, rejected or timed out): the typo
-  // scoring goes next on the same Zenz worker.
+  // The AI candidate is done (applied, rejected or timed out): the AI rank
+  // (when the AI conversion differs) and the typo scoring go next on the same
+  // Zenz worker.
   if (was_pending && !pending_ai_candidates_.pending &&
       !command->output().has_callback()) {
+    if (pending_ai_rank_.prepared) {
+      MaybeScheduleAiRank(command);
+      if (pending_ai_rank_.pending) {
+        return result;
+      }
+    }
     MaybeScheduleTypoZenz(command);
   }
   return result;
@@ -7912,6 +7935,7 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
   // aggregate with an unknown internal boundary covers baseline_keys.size()
   // segments and is skipped.
   std::vector<engine::ExternalSegmentCandidate> candidates;
+  std::vector<engine::ExternalSegmentCandidate> changed_candidates;
   size_t segment_index = 0;
   size_t aggregates = 0;
   size_t changed_segments = 0;
@@ -7927,6 +7951,8 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
       candidates.push_back({segment_index, segment.key, segment.zenz_value});
       if (segment.changed) {
         ++changed_segments;
+        changed_candidates.push_back(
+            {segment_index, segment.key, segment.zenz_value});
       }
     }
     ++segment_index;
@@ -7941,6 +7967,31 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
   if (inserted > 0 && changed_segments > 0 && !agrees_with_mozc) {
     ai_candidate_badge_ =
         ai_first ? AiCandidateBadge::kApplied : AiCandidateBadge::kAvailable;
+    // Mozlumi: show the differing words on the badge, so that they can be
+    // seen before committing.
+    constexpr size_t kMaxHintChars = 12;
+    std::string hint;
+    for (const engine::ExternalSegmentCandidate& changed :
+         changed_candidates) {
+      if (!hint.empty()) {
+        absl::StrAppend(&hint, "・");
+      }
+      absl::StrAppend(&hint, changed.value);
+    }
+    if (Util::CharsLen(hint) > kMaxHintChars) {
+      hint = absl::StrCat(Util::Utf8SubString(hint, 0, kMaxHintChars - 1),
+                          "…");
+    }
+    ai_candidate_hint_ = std::move(hint);
+    // Mozlumi: Zenz compares the two conversions next, and the AI conversion
+    // may become the top candidate (ai_candidate_auto_first).
+    if (!ai_first && config.ai_candidate_auto_first()) {
+      pending_ai_rank_.prepared = true;
+      pending_ai_rank_.key = pending.key;
+      pending_ai_rank_.mozc_value = pending.mozc_value;
+      pending_ai_rank_.ai_value = prefix.value;
+      pending_ai_rank_.changed = std::move(changed_candidates);
+    }
   }
   ZenzDebugOutput(absl::StrCat(
       "[ai-candidates] result agrees=", ZenzBool(agrees_with_mozc),
@@ -7953,6 +8004,167 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
 }
 
 void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
+
+// Mozlumi: how much more likely (natural log) the AI conversion has to be than
+// the normal conversion to become the top candidate. Tuned with the
+// "[ai-rank] result margin=" lines of zenz_debug.log.
+constexpr double kAiRankPromoteMargin = 2.0;
+
+void Session::ClearAiRank() { pending_ai_rank_ = PendingAiRank(); }
+
+void Session::AttachAiRankPollCallback(commands::Command* command) const {
+  commands::Output::Callback* callback =
+      command->mutable_output()->mutable_callback();
+  commands::SessionCommand* session_command =
+      callback->mutable_session_command();
+  session_command->set_type(commands::SessionCommand::APPLY_AI_CANDIDATES);
+  session_command->set_live_conversion_generation(
+      pending_ai_rank_.generation);
+  session_command->set_live_conversion_key(pending_ai_rank_.key);
+  callback->set_delay_millisec(kDefaultZenzLiveCorrectionPollMsec);
+}
+
+void Session::MaybeScheduleAiRank(commands::Command* command) {
+  PendingAiRank prepared = std::move(pending_ai_rank_);
+  ClearAiRank();
+  const config::Config& config = context_->GetConfig();
+  if (!prepared.prepared || prepared.changed.empty() ||
+      !config.use_ai_conversion() || !config.ai_candidate_auto_first() ||
+      config.ai_candidate_first() ||
+      context_->state() != ImeContext::CONVERSION ||
+      context_->composer().GetInputFieldType() ==
+          commands::Context::PASSWORD ||
+      command->output().has_callback() ||
+      context_->composer().GetQueryForConversion() != prepared.key) {
+    return;
+  }
+
+  bool zenz_context_from_recent_commit = false;
+  const ZenzClientContextView zenz_client_context =
+      GetZenzContextView(&zenz_context_from_recent_commit);
+  ZenzContextAssemblyInput context_input;
+  context_input.preceding_text = zenz_client_context.preceding_text;
+  context_input.following_text = zenz_client_context.following_text;
+  context_input.left_max_chars = GetZenzLiveCorrectionLeftContextLength(config);
+  context_input.right_max_chars =
+      GetZenzLiveCorrectionRightContextLength(config);
+  const ZenzContextAssemblyResult assembled_context =
+      zenz_context_assembler_.Assemble(context_input);
+  ZenzPromptOptions prompt_options;
+  prompt_options.left_context = assembled_context.left.prompt_context;
+  prompt_options.right_context = assembled_context.right.prompt_context;
+  prompt_options.profile = config.zenz_live_correction_profile();
+  prompt_options.topic = config.zenz_live_correction_topic();
+  prompt_options.style = config.zenz_live_correction_style();
+  prompt_options.settings = config.zenz_live_correction_settings();
+  ZenzPromptBuilder prompt_builder;
+
+  // Same prompt as the typo scoring: the prefix shared by all the readings,
+  // then the reading, the output marker U+EE01 and the conversion to score.
+  constexpr absl::string_view kOutputBegin = "\xEE\xB8\x81";
+  std::string prefix = prompt_builder.Build("", prompt_options);
+  if (!absl::EndsWith(prefix, kOutputBegin)) {
+    return;
+  }
+  prefix.resize(prefix.size() - kOutputBegin.size());
+  const std::string reading = absl::StrCat(
+      prompt_builder.HiraganaToKatakana(prepared.key), kOutputBegin);
+  std::vector<std::string> forced;
+  forced.push_back(absl::StrCat(reading, prepared.mozc_value));
+  forced.push_back(absl::StrCat(reading, prepared.ai_value));
+
+  ++zenz_live_generation_;
+  ZenzLiveRequest request;
+  request.generation = zenz_live_generation_;
+  request.key = prepared.key;
+  request.prompt = zenz::EncodeZenzTypoBatchPrompt(prefix, forced);
+  request.reading_katakana = prompt_builder.HiraganaToKatakana(prepared.key);
+  request.left_context = assembled_context.left.prompt_context;
+  request.pipe_name = config.zenz_live_correction_pipe_name();
+  request.timeout_msec = 1500;
+  request.max_output_chars = 256;
+  request.issued_at = Clock::GetAbslTime();
+
+  prepared.prepared = false;
+  prepared.pending = true;
+  prepared.generation = request.generation;
+  prepared.issued_at = request.issued_at;
+  pending_ai_rank_ = std::move(prepared);
+
+  ZenzDebugOutput(absl::StrCat(
+      "[ai-rank] submit generation=", request.generation,
+      " changed=", pending_ai_rank_.changed.size(),
+      " context_reason=", assembled_context.left.reason,
+      " context_source=",
+      (zenz_context_from_recent_commit ? "recent_commit" : "app")));
+  EnsureZenzLiveCorrector()->Submit(std::move(request));
+  AttachAiRankPollCallback(command);
+}
+
+bool Session::ApplyAiRank(commands::Command* command) {
+  command->mutable_output()->set_consumed(true);
+  if (context_->state() != ImeContext::CONVERSION ||
+      context_->composer().GetQueryForConversion() != pending_ai_rank_.key ||
+      zenz_live_corrector_ == nullptr) {
+    ZenzDebugOutput("[ai-rank] dropped: conversion changed");
+    ClearAiRank();
+    return IgnoreStaleDelayedLiveConversion(command);
+  }
+
+  std::optional<ZenzLiveResponse> response =
+      zenz_live_corrector_->TakeResult(pending_ai_rank_.generation);
+  if (!response.has_value()) {
+    ++pending_ai_rank_.poll_count;
+    Output(command);
+    if (Clock::GetAbslTime() - pending_ai_rank_.issued_at >=
+        absl::Milliseconds(kZenzLiveCorrectionAsyncWaitMsec)) {
+      ZenzDebugOutput("[ai-rank] no result reason=timeout");
+      ClearAiRank();
+      return true;
+    }
+    AttachAiRankPollCallback(command);
+    return true;
+  }
+
+  const PendingAiRank pending = std::move(pending_ai_rank_);
+  ClearAiRank();
+
+  std::vector<zenz::ZenzTypoBatchResult> results;
+  if (!response->ok || response->timeout ||
+      !zenz::DecodeZenzTypoBatchResponse(response->value, &results) ||
+      results.size() != 2 || !results[0].ok || !results[1].ok) {
+    ZenzDebugOutput(absl::StrCat(
+        "[ai-rank] response not usable timeout=",
+        ZenzBool(response->timeout), " reason=",
+        ZenzSafeDebugReason(response->debug)));
+    Output(command);
+    return true;
+  }
+
+  // The whole sentence, including what Zenz would write after it: the
+  // scores of the two conversions of the same reading and context.
+  const double mozc_score = results[0].forced_logprob + results[0].value_logprob;
+  const double ai_score = results[1].forced_logprob + results[1].value_logprob;
+  const double margin = ai_score - mozc_score;
+  const bool promote = margin >= kAiRankPromoteMargin;
+  size_t promoted = 0;
+  if (promote && !context_->GetConfig().ai_candidate_first()) {
+    promoted = context_->mutable_converter()->InsertExternalSegmentCandidates(
+        pending.changed, "AI", /*position=*/0);
+    if (promoted > 0) {
+      ai_candidate_badge_ = AiCandidateBadge::kApplied;
+    }
+  }
+  // Scores only: the text is not logged.
+  ZenzDebugOutput(absl::StrCat(
+      "[ai-rank] result margin=", static_cast<int>(margin * 100) / 100.0,
+      " threshold=", kAiRankPromoteMargin, " promote=", ZenzBool(promote),
+      " promoted=", promoted, " mozc_tail_chars=",
+      Util::CharsLen(results[0].value), " ai_tail_chars=",
+      Util::CharsLen(results[1].value)));
+  Output(command);
+  return true;
+}
 
 void Session::UpdateSelfFixLearning(const commands::Command& command,
                                     ImeContext::State state_before,
@@ -11554,6 +11766,9 @@ void Session::Output(commands::Command* command) {
       command->output().has_preedit()) {
     if (ai_candidate_badge_ == AiCandidateBadge::kAvailable) {
       command->mutable_output()->set_ai_candidate_available(true);
+      if (!ai_candidate_hint_.empty()) {
+        command->mutable_output()->set_ai_candidate_hint(ai_candidate_hint_);
+      }
     } else if (ai_candidate_badge_ == AiCandidateBadge::kApplied) {
       command->mutable_output()->set_ai_candidate_applied(true);
     }

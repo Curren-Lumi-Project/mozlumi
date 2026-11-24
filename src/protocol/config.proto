@@ -770,6 +770,11 @@ message Config {
   // selecting a candidate. Digits on the main keyboard row still select
   // candidates by the selection shortcut.
   optional bool ignore_numpad_candidate_shortcut = 5003 [default = true];
+  // Mozlumi: when the AI conversion differs, Zenz scores the normal conversion
+  // and the AI conversion with the same context, and the AI conversion becomes
+  // the top candidate only when it is clearly more likely. Ignored when
+  // ai_candidate_first is on.
+  optional bool ai_candidate_auto_first = 5004 [default = true];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;

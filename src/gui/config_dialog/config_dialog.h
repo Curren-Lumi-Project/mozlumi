@@ -130,6 +130,9 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   QCheckBox *update_check_checkbox_ = nullptr;
   // Mozlumi: "make the AI conversion the top candidate" (ai_candidate_first).
   QCheckBox *ai_candidate_first_checkbox_ = nullptr;
+  // Mozlumi: "make the AI conversion the top candidate when Zenz is
+  // confident" (ai_candidate_auto_first).
+  QCheckBox *ai_candidate_auto_first_checkbox_ = nullptr;
   bool initial_update_check_enabled_ = true;
   bool suppress_apply_button_update_;
   int initial_preedit_method_;
