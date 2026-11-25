@@ -1197,11 +1197,12 @@ bool HttpPostLlamaCompletionBody(
   headers += Utf8ToWide(options.api_key);
   headers += L"\r\n";
 
+  // WinHttpSendRequest takes non-const optional data, but does not change it.
   BOOL ok = WinHttpSendRequest(
       request,
       headers.c_str(),
       static_cast<DWORD>(-1L),
-      body.data(),
+      const_cast<char*>(body.data()),
       static_cast<DWORD>(body.size()),
       static_cast<DWORD>(body.size()),
       0);

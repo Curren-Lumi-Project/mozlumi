@@ -33,10 +33,10 @@ TEST(ZenzTypoBatchRunnerTest, ParsesTokenLogprobs) {
       R"("top_logprobs":[]}],"stop":true})";
   std::vector<ZenzBatchTokenLogprob> tokens;
   ASSERT_TRUE(ParseZenzCompletionTokenLogprobs(json, &tokens));
-  ASSERT_EQ(tokens.size(), 2);
-  EXPECT_EQ(tokens[0].bytes, 3);
+  ASSERT_EQ(tokens.size(), 2u);
+  EXPECT_EQ(tokens[0].bytes, 3u);
   EXPECT_DOUBLE_EQ(tokens[0].logprob, -4.17);
-  EXPECT_EQ(tokens[1].bytes, 2);
+  EXPECT_EQ(tokens[1].bytes, 2u);
   EXPECT_DOUBLE_EQ(tokens[1].logprob, -0.5);
 
   EXPECT_FALSE(ParseZenzCompletionTokenLogprobs(R"({"content":"x"})", &tokens));
