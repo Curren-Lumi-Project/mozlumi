@@ -561,9 +561,10 @@ class Session {
     std::vector<engine::ExternalSegmentCandidate> changed;
     // The whole conversion in order, and the changed segments judged again
     // because their new word is also elsewhere (zenz_repeat_check.h). The
-    // results of their jobs follow the two whole conversions, in this order.
+    // results of their three jobs (normal, AI, Zenz's own answer) follow the
+    // two whole conversions, in this order.
     std::vector<ZenzRankPart> parts;
-    std::vector<size_t> repeat_check_segments;
+    std::vector<ZenzRepeatCheck> repeat_checks;
     absl::Time issued_at;
     uint32_t poll_count = 0;
   };

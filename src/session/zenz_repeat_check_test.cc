@@ -75,6 +75,52 @@ TEST(ZenzRepeatCheckTest, NoRepeatNoCheck) {
   EXPECT_TRUE(FindZenzRepeatChecks("", short_parts, 4).empty());
 }
 
+TEST(ZenzRepeatCheckTest, ChooseValue) {
+  ZenzRepeatCheck check;
+  check.key = "どうきがしてきた";
+  check.mozc_value = "動機がしてきた";
+  check.ai_value = "同期がしてきた";
+
+  // 2026-11-25 20:32: the AI conversion was better than the normal one, and
+  // Zenz's own answer without the other word was even better.
+  ZenzRepeatCheckScores scores;
+  scores.mozc = -22.27;
+  scores.ai = -19.82;
+  scores.local = -16.73;
+  scores.local_value = "動悸がしてきた";
+  EXPECT_EQ(ChooseZenzRepeatCheckValue(check, scores, 1.5), "動悸がしてきた");
+
+  // Zenz's own answer is the AI conversion.
+  scores.local = -19.82;
+  scores.local_value = "同期がしてきた";
+  EXPECT_EQ(ChooseZenzRepeatCheckValue(check, scores, 1.5), "同期がしてきた");
+
+  // Not better by the margin: the normal conversion stays.
+  scores.mozc = -19.0;
+  scores.local = -18.0;
+  scores.local_value = "動悸がしてきた";
+  EXPECT_EQ(ChooseZenzRepeatCheckValue(check, scores, 1.5), "");
+
+  // Zenz's own answer is the normal conversion.
+  scores.mozc = -22.27;
+  scores.ai = -23.0;
+  scores.local = -22.27;
+  scores.local_value = "動機がしてきた";
+  EXPECT_EQ(ChooseZenzRepeatCheckValue(check, scores, 1.5), "");
+
+  // The AI job failed; Zenz's own answer is used.
+  scores.ai.reset();
+  scores.local = -16.73;
+  scores.local_value = "動悸がしてきた";
+  EXPECT_EQ(ChooseZenzRepeatCheckValue(check, scores, 1.5), "動悸がしてきた");
+
+  // No usable answer of Zenz; the AI conversion is better by the margin.
+  scores.ai = -19.82;
+  scores.local.reset();
+  scores.local_value.clear();
+  EXPECT_EQ(ChooseZenzRepeatCheckValue(check, scores, 1.5), "同期がしてきた");
+}
+
 TEST(ZenzRepeatCheckTest, MaxChecks) {
   const std::vector<ZenzRankPart> parts = {
       {0, "どうきを", "動機を", "同期を", true},

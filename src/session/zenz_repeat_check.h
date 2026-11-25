@@ -5,6 +5,7 @@
 #define MOZC_SESSION_ZENZ_REPEAT_CHECK_H_
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,10 @@ namespace session {
 // preceding text is cut after it, and the text after the segment is left out.
 // Then Zenz chose the right words, also for a sentence that really repeats a
 // word (eval/zenz_cases_20261125d.tsv, 2026-11-25).
+//
+// The normal conversion can be wrong too ("動機" for "どうき" where "動悸" is
+// right), so Zenz also writes its own answer without the other word, and the
+// best of the three is taken (Build 58).
 
 // One segment of the conversion compared by the AI rank, in order.
 struct ZenzRankPart {
@@ -44,6 +49,25 @@ struct ZenzRepeatCheck {
   // before it), cut after the other word when it is there.
   std::string left_context;
 };
+
+// The scores (log-probabilities; larger is better) of a check, with the same
+// prompt: the reading and the value, and what Zenz writes after it.
+struct ZenzRepeatCheckScores {
+  double mozc = 0.0;
+  // std::nullopt when the job failed.
+  std::optional<double> ai;
+  // Zenz's own answer; std::nullopt when the job failed or the answer is not
+  // usable.
+  std::optional<double> local;
+  std::string local_value;
+};
+
+// The value to put first for the checked segment: the AI conversion or Zenz's
+// own answer, whichever is better, when it is better than the normal
+// conversion by `margin`. Empty to keep the normal conversion.
+std::string ChooseZenzRepeatCheckValue(const ZenzRepeatCheck& check,
+                                       const ZenzRepeatCheckScores& scores,
+                                       double margin);
 
 // The part of `ai_value` that differs from `mozc_value`: the common beginning
 // and end (whole characters) are removed. "同期してたら" and "動悸してたら"

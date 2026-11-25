@@ -53,6 +53,24 @@ std::string ZenzChangedWord(absl::string_view mozc_value,
   return std::string(ai_value.substr(prefix, ai_value.size() - prefix - suffix));
 }
 
+std::string ChooseZenzRepeatCheckValue(const ZenzRepeatCheck& check,
+                                       const ZenzRepeatCheckScores& scores,
+                                       double margin) {
+  std::string value;
+  double best = 0.0;
+  if (scores.ai.has_value() && *scores.ai - scores.mozc >= margin) {
+    best = *scores.ai - scores.mozc;
+    value = check.ai_value;
+  }
+  if (scores.local.has_value() && !scores.local_value.empty() &&
+      scores.local_value != check.mozc_value &&
+      *scores.local - scores.mozc >= margin &&
+      (value.empty() || *scores.local - scores.mozc > best)) {
+    value = scores.local_value;
+  }
+  return value;
+}
+
 std::vector<ZenzRepeatCheck> FindZenzRepeatChecks(
     absl::string_view left_context, absl::Span<const ZenzRankPart> parts,
     size_t max_checks) {

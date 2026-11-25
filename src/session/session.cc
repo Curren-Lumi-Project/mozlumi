@@ -8181,12 +8181,13 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
   // reading. A changed segment whose new word is also elsewhere in the
   // sentence or in the preceding text is judged again: the preceding text is
   // cut after the other word, and the text after the segment is left out.
-  // Each check is a pair of jobs (normal, AI) with their own prefix.
-  const std::vector<ZenzRepeatCheck> repeat_checks = FindZenzRepeatChecks(
+  // Each check is three jobs with their own prefix: the normal conversion,
+  // the AI conversion, and Zenz's own answer (Build 58).
+  std::vector<ZenzRepeatCheck> repeat_checks = FindZenzRepeatChecks(
       assembled_context.left.prompt_context, prepared.parts,
       kAiRankMaxRepeatChecks);
-  prepared.repeat_check_segments.clear();
-  for (const ZenzRepeatCheck& check : repeat_checks) {
+  prepared.repeat_checks.clear();
+  for (ZenzRepeatCheck& check : repeat_checks) {
     ZenzPromptOptions check_options = prompt_options;
     check_options.left_context = check.left_context;
     check_options.right_context.clear();
@@ -8201,15 +8202,16 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
         check_prefix, absl::StrCat(check_reading, check.mozc_value)));
     forced.push_back(zenz::MakeZenzTypoBatchJob(
         check_prefix, absl::StrCat(check_reading, check.ai_value)));
-    prepared.repeat_check_segments.push_back(check.segment_index);
+    forced.push_back(zenz::MakeZenzTypoBatchJob(check_prefix, check_reading));
+    prepared.repeat_checks.push_back(std::move(check));
   }
   std::string batch_prompt = zenz::EncodeZenzTypoBatchPrompt(prefix, forced);
-  if (!prepared.repeat_check_segments.empty() &&
+  if (!prepared.repeat_checks.empty() &&
       batch_prompt.size() > kAiRankMaxPromptBytes) {
     // Without the checks, a repeated word could be promoted.
     ZenzDebugOutput(absl::StrCat(
         "[ai-rank] skipped reason=prompt_too_long repeat_checks=",
-        prepared.repeat_check_segments.size()));
+        prepared.repeat_checks.size()));
     return;
   }
 
@@ -8234,7 +8236,7 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
   ZenzDebugOutput(absl::StrCat(
       "[ai-rank] submit generation=", request.generation,
       " changed=", pending_ai_rank_.changed.size(),
-      " repeat_checks=", pending_ai_rank_.repeat_check_segments.size(),
+      " repeat_checks=", pending_ai_rank_.repeat_checks.size(),
       " context_reason=", assembled_context.left.reason,
       " context_source=",
       (zenz_context_from_recent_commit ? "recent_commit" : "app")));
@@ -8271,10 +8273,10 @@ bool Session::ApplyAiRank(commands::Command* command) {
   ClearAiRank();
 
   std::vector<zenz::ZenzTypoBatchResult> results;
-  const size_t repeat_checks = pending.repeat_check_segments.size();
+  const size_t repeat_checks = pending.repeat_checks.size();
   if (!response->ok || response->timeout ||
       !zenz::DecodeZenzTypoBatchResponse(response->value, &results) ||
-      results.size() != 2 + 2 * repeat_checks || !results[0].ok ||
+      results.size() != 2 + 3 * repeat_checks || !results[0].ok ||
       !results[1].ok) {
     ZenzDebugOutput(absl::StrCat(
         "[ai-rank] response not usable timeout=",
@@ -8295,41 +8297,101 @@ bool Session::ApplyAiRank(commands::Command* command) {
   // promotion is skipped, since the score was of the whole AI conversion.
   const size_t user_kept =
       context_->converter().CountUserChosenTopSegments(pending.changed);
-  // Mozlumi: a segment judged again (repeat check) keeps the normal
-  // conversion unless the AI conversion is still better by the margin
-  // without the other word. The other changed segments are promoted.
+  // Mozlumi: a segment judged again (repeat check) takes the AI conversion or
+  // Zenz's own answer without the other word, whichever is better, only when
+  // it is better than the normal conversion by the margin; otherwise the
+  // normal conversion stays. The other changed segments are promoted.
+  const config::Config& rank_config = context_->GetConfig();
+  const auto total_logprob = [](const zenz::ZenzTypoBatchResult& result) {
+    return result.forced_logprob + result.value_logprob;
+  };
+  const auto round2 = [](double value) {
+    return static_cast<int>(value * 100) / 100.0;
+  };
+  // Zenz's own answer, checked like the AI candidates; empty when not usable.
+  const auto usable_answer = [&](const ZenzRepeatCheck& check,
+                                 absl::string_view raw) -> std::string {
+    const ZenzContextPrefixDecision answer =
+        ZenzOutputValidator::ResolveLeftContextPrefix(raw, check.left_context,
+                                                      check.mozc_value);
+    if (!answer.safe || answer.value.empty()) {
+      return "";
+    }
+    if (answer.value == check.mozc_value) {
+      return answer.value;
+    }
+    ZenzValidationInput input;
+    input.key = check.key;
+    input.mozc_value = check.mozc_value;
+    input.zenz_value = answer.value;
+    input.left_context = check.left_context;
+    input.min_key_length = 0;
+    input.allow_synthetic_candidate = true;
+    input.allow_zenz_emoji_changes = rank_config.allow_zenz_emoji_changes();
+    return zenz_output_validator_.Validate(input).accept ? answer.value : "";
+  };
   std::vector<size_t> repeat_kept_segments;
+  std::vector<engine::ExternalSegmentCandidate> repeat_own_answers;
   std::string repeat_margins;
   for (size_t c = 0; c < repeat_checks; ++c) {
-    const zenz::ZenzTypoBatchResult& mozc_check = results[2 + 2 * c];
-    const zenz::ZenzTypoBatchResult& ai_check = results[3 + 2 * c];
+    const ZenzRepeatCheck& check = pending.repeat_checks[c];
+    const zenz::ZenzTypoBatchResult& mozc_check = results[2 + 3 * c];
+    const zenz::ZenzTypoBatchResult& ai_check = results[3 + 3 * c];
+    const zenz::ZenzTypoBatchResult& own_check = results[4 + 3 * c];
     if (!repeat_margins.empty()) {
       absl::StrAppend(&repeat_margins, ",");
     }
-    if (!mozc_check.ok || !ai_check.ok) {
+    if (!mozc_check.ok) {
       absl::StrAppend(&repeat_margins, "none");
-      repeat_kept_segments.push_back(pending.repeat_check_segments[c]);
+      repeat_kept_segments.push_back(check.segment_index);
       continue;
     }
-    const double check_margin =
-        (ai_check.forced_logprob + ai_check.value_logprob) -
-        (mozc_check.forced_logprob + mozc_check.value_logprob);
-    absl::StrAppend(&repeat_margins,
-                    static_cast<int>(check_margin * 100) / 100.0);
-    if (check_margin < kAiRankPromoteMargin) {
-      repeat_kept_segments.push_back(pending.repeat_check_segments[c]);
+    ZenzRepeatCheckScores scores;
+    scores.mozc = total_logprob(mozc_check);
+    if (ai_check.ok) {
+      scores.ai = total_logprob(ai_check);
+    }
+    if (own_check.ok) {
+      std::string own_value = usable_answer(check, own_check.value);
+      if (!own_value.empty()) {
+        scores.local = total_logprob(own_check);
+        scores.local_value = std::move(own_value);
+      }
+    }
+    // "AI/own answer" minus the normal conversion; scores only.
+    absl::StrAppend(
+        &repeat_margins,
+        scores.ai.has_value() ? absl::StrCat(round2(*scores.ai - scores.mozc))
+                              : std::string("none"),
+        "/",
+        scores.local.has_value()
+            ? absl::StrCat(round2(*scores.local - scores.mozc))
+            : std::string("none"));
+    const std::string value =
+        ChooseZenzRepeatCheckValue(check, scores, kAiRankPromoteMargin);
+    if (value.empty()) {
+      repeat_kept_segments.push_back(check.segment_index);
+    } else if (value != check.ai_value) {
+      repeat_own_answers.push_back({check.segment_index, check.key, value});
     }
   }
   std::vector<engine::ExternalSegmentCandidate> to_promote;
   for (const engine::ExternalSegmentCandidate& item : pending.changed) {
     if (std::find(repeat_kept_segments.begin(), repeat_kept_segments.end(),
-                  item.segment_index) == repeat_kept_segments.end()) {
-      to_promote.push_back(item);
+                  item.segment_index) != repeat_kept_segments.end()) {
+      continue;
     }
+    engine::ExternalSegmentCandidate promoted_item = item;
+    for (const engine::ExternalSegmentCandidate& own : repeat_own_answers) {
+      if (own.segment_index == item.segment_index) {
+        promoted_item.value = own.value;
+      }
+    }
+    to_promote.push_back(std::move(promoted_item));
   }
   size_t promoted = 0;
   if (promote && user_kept == 0 && !to_promote.empty() &&
-      !context_->GetConfig().ai_candidate_first()) {
+      !rank_config.ai_candidate_first()) {
     promoted = context_->mutable_converter()->InsertExternalSegmentCandidates(
         to_promote, "AI", /*position=*/0);
     if (promoted > 0) {
@@ -8343,6 +8405,7 @@ bool Session::ApplyAiRank(commands::Command* command) {
       " promoted=", promoted, " user_kept=", user_kept,
       " repeat_checks=", repeat_checks,
       " repeat_kept=", repeat_kept_segments.size(),
+      " repeat_own=", repeat_own_answers.size(),
       repeat_checks > 0 ? absl::StrCat(" repeat_margins=", repeat_margins)
                         : std::string(),
       " mozc_tail_chars=",
