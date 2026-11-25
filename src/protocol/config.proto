@@ -781,6 +781,11 @@ message Config {
   // user is in other applications). On: the text committed in any
   // application. Memory only. macOS only (the client tells the application).
   optional bool zenz_context_across_apps = 5005 [default = false];
+  // Mozlumi: when the conversion is committed (Enter, or typing on) while the
+  // AI is still working on it (the AI candidates, then the AI rank), wait for
+  // it a little (at most 300 ms), so that the AI conversion can become the top
+  // candidate before the commit.
+  optional bool wait_ai_before_commit = 5006 [default = true];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;

@@ -806,6 +806,19 @@ ConfigDialog::ConfigDialog()
                         " AI が採点し、AI の変換の点数がはっきり高いときだけ"
                         " 1 番目にします。判定が外れることもあります。"
                         "上の設定がオンのときは使いません。"));
+  // Mozlumi: wait a little for the AI before a commit (wait_ai_before_commit).
+  wait_ai_before_commit_checkbox_ = new QCheckBox(
+      QString::fromUtf8("AI の答えが出るまで、確定を少し待つ"),
+      aiConversionCheckBox->parentWidget());
+  wait_ai_before_commit_checkbox_->setObjectName(
+      QStringLiteral("waitAiBeforeCommitCheckBox"));
+  InsertWidgetAfter(ai_candidate_auto_first_description_label,
+                    wait_ai_before_commit_checkbox_);
+  QLabel *wait_ai_before_commit_description_label = InsertDescriptionAfter(
+      wait_ai_before_commit_checkbox_,
+      QString::fromUtf8("変換してすぐに確定したときも、AI の答えが候補に入り、"
+                        "1 番目にするかが決まるまで（最大 0.3 秒）待ってから"
+                        "確定します。"));
 #ifdef __APPLE__
   // Mozlumi: whether the text committed in other applications is also used
   // as the AI context (zenz_context_across_apps). macOS only: the Windows
@@ -816,7 +829,7 @@ ConfigDialog::ConfigDialog()
       aiConversionCheckBox->parentWidget());
   zenz_context_across_apps_checkbox_->setObjectName(
       QStringLiteral("zenzContextAcrossAppsCheckBox"));
-  InsertWidgetAfter(ai_candidate_auto_first_description_label,
+  InsertWidgetAfter(wait_ai_before_commit_description_label,
                     zenz_context_across_apps_checkbox_);
   InsertDescriptionAfter(
       zenz_context_across_apps_checkbox_,
@@ -826,7 +839,7 @@ ConfigDialog::ConfigDialog()
                         "文だけを使います。どちらも文はメモリの中だけに置き、"
                         "5 分入力がないと忘れます。"));
 #else   // __APPLE__
-  (void)ai_candidate_auto_first_description_label;
+  (void)wait_ai_before_commit_description_label;
 #endif  // __APPLE__
 
 #if defined(__APPLE__) || defined(_WIN32)
@@ -6387,6 +6400,10 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
     zenz_context_across_apps_checkbox_->setChecked(
         config.zenz_context_across_apps());
   }
+  if (wait_ai_before_commit_checkbox_ != nullptr) {
+    wait_ai_before_commit_checkbox_->setChecked(
+        config.wait_ai_before_commit());
+  }
   SET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);
   // Invert only the UI: the persisted field remains an opt-in for emoji changes.
@@ -6799,6 +6816,10 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   if (zenz_context_across_apps_checkbox_ != nullptr) {
     config->set_zenz_context_across_apps(
         zenz_context_across_apps_checkbox_->isChecked());
+  }
+  if (wait_ai_before_commit_checkbox_ != nullptr) {
+    config->set_wait_ai_before_commit(
+        wait_ai_before_commit_checkbox_->isChecked());
   }
   GET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);

@@ -137,6 +137,9 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   // Mozlumi: "use the text committed in other applications as the AI
   // context" (zenz_context_across_apps). macOS only; nullptr elsewhere.
   QCheckBox *zenz_context_across_apps_checkbox_ = nullptr;
+  // Mozlumi: "wait a little for the AI before a commit"
+  // (wait_ai_before_commit).
+  QCheckBox *wait_ai_before_commit_checkbox_ = nullptr;
   bool initial_update_check_enabled_ = true;
   bool suppress_apply_button_update_;
   int initial_preedit_method_;

@@ -47,6 +47,7 @@
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "base/clock.h"
 #include "base/util.h"
@@ -7843,7 +7844,8 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
       command->input().command().live_conversion_generation() ==
           pending_ai_rank_.generation) {
     const bool result = ApplyAiRank(command);
-    if (!pending_ai_rank_.pending && !command->output().has_callback()) {
+    if (!pending_ai_rank_.pending && !command->output().has_callback() &&
+        !finishing_ai_before_commit_) {
       MaybeScheduleTypoZenz(command);
     }
     return result;
@@ -7861,9 +7863,59 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
         return result;
       }
     }
-    MaybeScheduleTypoZenz(command);
+    if (!finishing_ai_before_commit_) {
+      MaybeScheduleTypoZenz(command);
+    }
   }
   return result;
+}
+
+// Mozlumi: the longest wait before a commit for the AI
+// (Config.wait_ai_before_commit). The AI candidates and the AI rank usually
+// take about 55 ms and 80 ms (zenz_debug.log, 2026-11-25).
+constexpr int kAiWaitBeforeCommitMaxMsec = 300;
+constexpr int kAiWaitBeforeCommitStepMsec = 5;
+
+void Session::FinishAiWorkBeforeCommit() {
+  if (context_->state() != ImeContext::CONVERSION ||
+      !context_->GetConfig().wait_ai_before_commit() ||
+      zenz_live_corrector_ == nullptr ||
+      (!pending_ai_candidates_.pending && !pending_ai_rank_.pending)) {
+    return;
+  }
+  const absl::Time start = Clock::GetAbslTime();
+  finishing_ai_before_commit_ = true;
+  bool done = false;
+  // Counted by steps rather than by Clock, which tests may stop.
+  for (int waited = 0;; waited += kAiWaitBeforeCommitStepMsec) {
+    // The same as the client's delayed callback: applies the result when it
+    // is ready, and submits the AI rank after the AI candidates.
+    const bool rank = pending_ai_rank_.pending;
+    commands::Command poll;
+    poll.mutable_input()->set_type(commands::Input::SEND_COMMAND);
+    commands::SessionCommand* session_command =
+        poll.mutable_input()->mutable_command();
+    session_command->set_type(commands::SessionCommand::APPLY_AI_CANDIDATES);
+    session_command->set_live_conversion_generation(
+        rank ? pending_ai_rank_.generation
+             : pending_ai_candidates_.generation);
+    session_command->set_live_conversion_key(
+        rank ? pending_ai_rank_.key : pending_ai_candidates_.key);
+    ApplyAiCandidates(&poll);
+    if (!pending_ai_candidates_.pending && !pending_ai_rank_.pending) {
+      done = true;
+      break;
+    }
+    if (waited >= kAiWaitBeforeCommitMaxMsec) {
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(kAiWaitBeforeCommitStepMsec));
+  }
+  finishing_ai_before_commit_ = false;
+  ZenzDebugOutput(absl::StrCat(
+      "[ai-wait] before_commit result=", (done ? "done" : "timeout"),
+      " waited_ms=",
+      absl::ToInt64Milliseconds(Clock::GetAbslTime() - start)));
 }
 
 bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
@@ -10281,6 +10333,9 @@ bool Session::CommitInternal(commands::Command* command,
         (ImeContext::COMPOSITION | ImeContext::CONVERSION))) {
     return DoNothing(command);
   }
+  // Mozlumi: let the AI finish on this conversion first, so that the AI
+  // conversion can become the top candidate (Config.wait_ai_before_commit).
+  FinishAiWorkBeforeCommit();
   command->mutable_output()->set_consumed(true);
 
   PushUndoContext();

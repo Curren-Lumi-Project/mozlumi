@@ -562,6 +562,9 @@ class Session {
     uint32_t poll_count = 0;
   };
   PendingAiRank pending_ai_rank_;
+  // Mozlumi: true while FinishAiWorkBeforeCommit() applies the AI results;
+  // the typo scoring is not started then (the conversion is being committed).
+  bool finishing_ai_before_commit_ = false;
   // Mozlumi: recently committed text, Zenz's left context for applications
   // that do not provide surrounding text. Memory only. Used when the client
   // did not tell the application (zenz_context_app_ is empty); otherwise the
@@ -910,6 +913,10 @@ class Session {
   bool ApplyAiRank(commands::Command* command);
   void AttachAiRankPollCallback(commands::Command* command) const;
   void ClearAiRank();
+  // Mozlumi: before a conversion is committed, waits a little for the AI
+  // candidates and the AI rank still working on it, and applies them
+  // (Config.wait_ai_before_commit).
+  void FinishAiWorkBeforeCommit();
   // Mozlumi: the client context for Zenz. When the application provided no
   // preceding text at all, recently committed text is used instead
   // (`*from_recent_commit` tells which).
