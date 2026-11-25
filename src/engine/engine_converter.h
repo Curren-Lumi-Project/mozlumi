@@ -192,6 +192,8 @@ class EngineConverter : public EngineConverterInterface {
   size_t InsertExternalSegmentCandidates(
       absl::Span<const ExternalSegmentCandidate> candidates,
       absl::string_view description, int position) override;
+  size_t CountUserChosenTopSegments(
+      absl::Span<const ExternalSegmentCandidate> candidates) const override;
   std::vector<SentenceTypoFixForZenz> GetSentenceTypoFixesForZenz(
       std::string* typed_key) const override;
   int ReplaceSentenceTypoFixes(

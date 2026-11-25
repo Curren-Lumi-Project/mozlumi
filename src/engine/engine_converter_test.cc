@@ -1413,6 +1413,45 @@ TEST_F(EngineConverterTest, InsertExternalSegmentCandidatesKeepsFocus) {
   EXPECT_EQ(output.preedit().segment(0).value(), "カマボコの");
 }
 
+TEST_F(EngineConverterTest, CountUserChosenTopSegments) {
+  auto mock_converter = std::make_shared<MockConverter>();
+  EngineConverter converter(mock_converter, request_, config_);
+  {
+    Segments segments;
+    SetKamaboko(&segments);
+    // "かまぼこの" was moved up by the user's learning, and "陰謀" is a user
+    // dictionary word.
+    segments.mutable_segment(0)->mutable_candidate(0)->attributes |=
+        converter::Attribute::USER_SEGMENT_HISTORY_REWRITER;
+    segments.mutable_segment(1)->mutable_candidate(0)->attributes |=
+        converter::Attribute::USER_DICTIONARY;
+    composer_->InsertCharacterPreedit("かまぼこのいんぼう");
+    FillT13Ns(&segments, composer_.get());
+    EXPECT_CALL(*mock_converter, StartConversion(_, _))
+        .WillOnce(DoAll(SetArgPointee<1>(segments), Return(true)));
+  }
+  ASSERT_TRUE(converter.Convert(*composer_));
+
+  const std::vector<ExternalSegmentCandidate> learned = {
+      {0, "かまぼこの", "蒲鉾の"}};
+  const std::vector<ExternalSegmentCandidate> user_dictionary = {
+      {1, "いんぼう", "印房"}};
+  const std::vector<ExternalSegmentCandidate> both = {
+      {0, "かまぼこの", "蒲鉾の"}, {1, "いんぼう", "印房"}};
+  const std::vector<ExternalSegmentCandidate> ignored = {
+      {0, "かまぼこ", "蒲鉾"},   // Key mismatch.
+      {5, "いんぼう", "印房"}};  // Out of range.
+  EXPECT_EQ(converter.CountUserChosenTopSegments(learned), 1u);
+  EXPECT_EQ(converter.CountUserChosenTopSegments(user_dictionary), 1u);
+  EXPECT_EQ(converter.CountUserChosenTopSegments(both), 2u);
+  EXPECT_EQ(converter.CountUserChosenTopSegments(ignored), 0u);
+
+  // With the AI candidates on top, nothing is the user's own: the new AI
+  // candidate "蒲鉾の" does not take over the marks of the old top candidate.
+  EXPECT_EQ(converter.InsertExternalSegmentCandidates(both, "AI", 0), 2u);
+  EXPECT_EQ(converter.CountUserChosenTopSegments(both), 0u);
+}
+
 TEST_F(EngineConverterTest, MultiSegmentsConversion) {
   const std::string kKamabokono = "かまぼこの";
   const std::string kInbou = "いんぼう";

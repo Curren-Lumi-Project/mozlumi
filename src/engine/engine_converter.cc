@@ -1789,7 +1789,13 @@ size_t EngineConverter::InsertExternalSegmentCandidates(
       candidate->content_value = item.value;
       candidate->inner_segment_boundary = converter::InnerSegmentBoundary();
       candidate->proper_noun_spans.clear();
-      candidate->attributes &= ~converter::Attribute::BEST_CANDIDATE;
+      // A copy of the top candidate: the AI word is not the user's learned
+      // word nor a user dictionary word.
+      candidate->attributes &=
+          ~(converter::Attribute::BEST_CANDIDATE |
+            converter::Attribute::USER_SEGMENT_HISTORY_REWRITER |
+            converter::Attribute::USER_HISTORY_PREDICTION |
+            converter::Attribute::USER_DICTIONARY);
       candidate->attributes |= converter::Attribute::RERANKED;
       candidate->description = std::string(description);
       candidate->a11y_description.clear();
@@ -1830,6 +1836,30 @@ size_t EngineConverter::InsertExternalSegmentCandidates(
     ++changed;
   }
   return changed;
+}
+
+size_t EngineConverter::CountUserChosenTopSegments(
+    absl::Span<const ExternalSegmentCandidate> candidates) const {
+  if (!CheckState(CONVERSION)) {
+    return 0;
+  }
+  constexpr uint32_t kUserChosen =
+      converter::Attribute::USER_SEGMENT_HISTORY_REWRITER |
+      converter::Attribute::USER_DICTIONARY;
+  size_t count = 0;
+  for (const ExternalSegmentCandidate& item : candidates) {
+    if (item.segment_index >= segments_.conversion_segments_size()) {
+      continue;
+    }
+    const Segment& segment = segments_.conversion_segment(item.segment_index);
+    if (segment.key() != item.key || segment.candidates_size() == 0) {
+      continue;
+    }
+    if (segment.candidate(0).attributes & kUserChosen) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 bool EngineConverter::ResolveExternalConversionSegments(

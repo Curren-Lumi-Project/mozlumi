@@ -8116,6 +8116,16 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
       context_->composer().GetQueryForConversion() != prepared.key) {
     return;
   }
+  // Mozlumi: the AI does not replace a word the user chose (learned or user
+  // dictionary). Then the AI conversion is only offered as the 2nd candidate,
+  // and the rank is not needed.
+  const size_t user_kept =
+      context_->converter().CountUserChosenTopSegments(prepared.changed);
+  if (user_kept > 0) {
+    ZenzDebugOutput(absl::StrCat(
+        "[ai-rank] skipped reason=user_choice user_kept=", user_kept));
+    return;
+  }
 
   bool zenz_context_from_recent_commit = false;
   const ZenzClientContextView zenz_client_context =
@@ -8225,8 +8235,14 @@ bool Session::ApplyAiRank(commands::Command* command) {
   const double ai_score = results[1].forced_logprob + results[1].value_logprob;
   const double margin = ai_score - mozc_score;
   const bool promote = margin >= kAiRankPromoteMargin;
+  // Mozlumi: checked again here, right before the change: the AI does not
+  // replace a word the user chose (learned or user dictionary). The whole
+  // promotion is skipped, since the score was of the whole AI conversion.
+  const size_t user_kept =
+      context_->converter().CountUserChosenTopSegments(pending.changed);
   size_t promoted = 0;
-  if (promote && !context_->GetConfig().ai_candidate_first()) {
+  if (promote && user_kept == 0 &&
+      !context_->GetConfig().ai_candidate_first()) {
     promoted = context_->mutable_converter()->InsertExternalSegmentCandidates(
         pending.changed, "AI", /*position=*/0);
     if (promoted > 0) {
@@ -8237,7 +8253,7 @@ bool Session::ApplyAiRank(commands::Command* command) {
   ZenzDebugOutput(absl::StrCat(
       "[ai-rank] result margin=", static_cast<int>(margin * 100) / 100.0,
       " threshold=", kAiRankPromoteMargin, " promote=", ZenzBool(promote),
-      " promoted=", promoted, " mozc_tail_chars=",
+      " promoted=", promoted, " user_kept=", user_kept, " mozc_tail_chars=",
       Util::CharsLen(results[0].value), " ai_tail_chars=",
       Util::CharsLen(results[1].value)));
   Output(command);
