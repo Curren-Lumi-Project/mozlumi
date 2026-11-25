@@ -91,7 +91,11 @@ PosixZenzResponse RunTypoBatch(const LlamaBackendOptions& options,
       Clock::now() + std::chrono::milliseconds(budget_msec);
   std::vector<::mozc::zenz::ZenzTypoBatchResult> results;
   size_t succeeded = 0;
-  for (const std::string& f : forced) {
+  for (const std::string& job : forced) {
+    // A job may have its own prefix (Mozlumi 1.3.3 Build 57).
+    std::string job_prompt;
+    std::string f;
+    ::mozc::zenz::SplitZenzTypoBatchJob(prefix, job, &job_prompt, &f);
     ::mozc::zenz::ZenzTypoBatchResult result;
     const int64_t remaining =
         std::chrono::duration_cast<std::chrono::milliseconds>(deadline -
@@ -108,7 +112,7 @@ PosixZenzResponse RunTypoBatch(const LlamaBackendOptions& options,
         std::min(256, options.n_predict + Utf8Chars(f));
     completion_request.timeout_msec = static_cast<uint32_t>(remaining);
     completion_request.max_output_chars = 256;
-    completion_request.prompt = prefix;
+    completion_request.prompt = job_prompt;
     // The forced part, then the conversion (anything but newlines and the
     // Zenz markers U+EE00..U+EE0F).
     completion_request.grammar = "root ::= \"" + EscapeGbnfLiteral(f) +

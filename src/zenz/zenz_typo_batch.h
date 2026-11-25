@@ -19,11 +19,19 @@ namespace zenz {
 //   log P(forced | prefix) and log P(value | prefix + forced)
 //
 // Request prompt:  kZenzTypoBatchMarker prefix (kZenzTypoBatchSeparator forced)*
+//
+// Since Mozlumi 1.3.3 Build 57 a job may have its own prefix instead of the
+// shared one (MakeZenzTypoBatchJob): "job_prefix kZenzTypoBatchJobPrefixEnd
+// forced". Such a batch begins with kZenzTypoBatchMarkerV2, so that an older
+// scorer does not take it as a batch.
 // Response value:  one line per job, "ok \t forced_lp \t value_lp \t value",
 //                  jobs separated by '\n'.
 
 // U+EE0F followed by a version tag. Zenz prompts never start with U+EE0F.
 inline constexpr std::string_view kZenzTypoBatchMarker = "\xEE\xB8\x8FZTB1";
+inline constexpr std::string_view kZenzTypoBatchMarkerV2 = "\xEE\xB8\x8FZTB2";
+// U+EE0D. Ends the own prefix of a job.
+inline constexpr std::string_view kZenzTypoBatchJobPrefixEnd = "\xEE\xB8\x8D";
 // U+EE0E.
 inline constexpr std::string_view kZenzTypoBatchSeparator = "\xEE\xB8\x8E";
 
@@ -36,6 +44,15 @@ struct ZenzTypoBatchResult {
 
 std::string EncodeZenzTypoBatchPrompt(std::string_view prefix,
                                       const std::vector<std::string>& forced);
+
+// A job scored after `job_prefix` instead of the shared prefix.
+std::string MakeZenzTypoBatchJob(std::string_view job_prefix,
+                                 std::string_view forced);
+
+// The prompt and the forced part of a decoded job: its own prefix when it has
+// one, otherwise `shared_prefix`.
+void SplitZenzTypoBatchJob(std::string_view shared_prefix, std::string_view job,
+                           std::string* prompt, std::string* forced);
 
 // Returns false when `prompt` is not a batch.
 bool DecodeZenzTypoBatchPrompt(std::string_view prompt, std::string* prefix,

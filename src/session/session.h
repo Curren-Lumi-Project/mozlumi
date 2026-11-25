@@ -59,6 +59,7 @@
 #include "session/zenz_live_corrector.h"
 #include "session/zenz_output_validator.h"
 #include "session/zenz_recent_commit_context.h"
+#include "session/zenz_repeat_check.h"
 #include "session/zenz_segment_projection.h"
 #include "transliteration/transliteration.h"
 
@@ -558,6 +559,11 @@ class Session {
     std::string mozc_value;
     std::string ai_value;
     std::vector<engine::ExternalSegmentCandidate> changed;
+    // The whole conversion in order, and the changed segments judged again
+    // because their new word is also elsewhere (zenz_repeat_check.h). The
+    // results of their jobs follow the two whole conversions, in this order.
+    std::vector<ZenzRankPart> parts;
+    std::vector<size_t> repeat_check_segments;
     absl::Time issued_at;
     uint32_t poll_count = 0;
   };

@@ -106,6 +106,27 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
+    name = "zenz_repeat_check",
+    srcs = ["zenz_repeat_check.cc"],
+    hdrs = ["zenz_repeat_check.h"],
+    deps = [
+        "//base:util",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+mozc_cc_test(
+    name = "zenz_repeat_check_test",
+    size = "small",
+    srcs = ["zenz_repeat_check_test.cc"],
+    deps = [
+        ":zenz_repeat_check",
+        "//testing:gunit_main",
+    ],
+)
+
+mozc_cc_library(
     name = "zenz_segment_projection",
     srcs = ["zenz_segment_projection.cc"],
     hdrs = ["zenz_segment_projection.h"],
@@ -292,6 +313,7 @@ mozc_cc_library(
         ":zenz_feedback_store",
         ":zenz_output_validator",
         ":zenz_prompt_builder",
+        ":zenz_repeat_check",
         ":zenz_segment_projection",
         ":zenz_text_privacy_analyzer",
         ":zenz_typo_decision",

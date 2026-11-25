@@ -39,7 +39,15 @@ bool ParseDouble(std::string_view text, double* value) {
 
 std::string EncodeZenzTypoBatchPrompt(std::string_view prefix,
                                       const std::vector<std::string>& forced) {
-  std::string prompt(kZenzTypoBatchMarker);
+  bool has_job_prefix = false;
+  for (const std::string& f : forced) {
+    if (f.find(kZenzTypoBatchJobPrefixEnd) != std::string::npos) {
+      has_job_prefix = true;
+      break;
+    }
+  }
+  std::string prompt(has_job_prefix ? kZenzTypoBatchMarkerV2
+                                    : kZenzTypoBatchMarker);
   prompt.append(prefix);
   for (const std::string& f : forced) {
     prompt.append(kZenzTypoBatchSeparator);
@@ -50,7 +58,9 @@ std::string EncodeZenzTypoBatchPrompt(std::string_view prefix,
 
 bool DecodeZenzTypoBatchPrompt(std::string_view prompt, std::string* prefix,
                                std::vector<std::string>* forced) {
-  if (prompt.substr(0, kZenzTypoBatchMarker.size()) != kZenzTypoBatchMarker) {
+  static_assert(kZenzTypoBatchMarker.size() == kZenzTypoBatchMarkerV2.size());
+  const std::string_view marker = prompt.substr(0, kZenzTypoBatchMarker.size());
+  if (marker != kZenzTypoBatchMarker && marker != kZenzTypoBatchMarkerV2) {
     return false;
   }
   const std::vector<std::string_view> parts =
@@ -65,9 +75,35 @@ bool DecodeZenzTypoBatchPrompt(std::string_view prompt, std::string* prefix,
     if (parts[i].empty()) {
       return false;
     }
+    const size_t end = parts[i].find(kZenzTypoBatchJobPrefixEnd);
+    if (end != std::string_view::npos &&
+        (marker != kZenzTypoBatchMarkerV2 ||
+         end + kZenzTypoBatchJobPrefixEnd.size() == parts[i].size())) {
+      return false;
+    }
     forced->emplace_back(parts[i]);
   }
   return true;
+}
+
+std::string MakeZenzTypoBatchJob(std::string_view job_prefix,
+                                 std::string_view forced) {
+  std::string job(job_prefix);
+  job.append(kZenzTypoBatchJobPrefixEnd);
+  job.append(forced);
+  return job;
+}
+
+void SplitZenzTypoBatchJob(std::string_view shared_prefix, std::string_view job,
+                           std::string* prompt, std::string* forced) {
+  const size_t end = job.find(kZenzTypoBatchJobPrefixEnd);
+  if (end == std::string_view::npos) {
+    prompt->assign(shared_prefix);
+    forced->assign(job);
+    return;
+  }
+  prompt->assign(job.substr(0, end));
+  forced->assign(job.substr(end + kZenzTypoBatchJobPrefixEnd.size()));
 }
 
 std::string EncodeZenzTypoBatchResponse(

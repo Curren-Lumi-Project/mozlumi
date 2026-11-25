@@ -68,6 +68,7 @@
 #include "session/zenz_context_assembler.h"
 #include "session/zenz_prompt_builder.h"
 #include "session/zenz_recent_commit_store.h"
+#include "session/zenz_repeat_check.h"
 #include "session/zenz_text_privacy_analyzer.h"
 #include "session/zenz_typo_decision.h"
 #include "zenz/zenz_typo_batch.h"
@@ -8012,10 +8013,17 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
   // segments and is skipped.
   std::vector<engine::ExternalSegmentCandidate> candidates;
   std::vector<engine::ExternalSegmentCandidate> changed_candidates;
+  // Mozlumi: the whole conversion in order, for the AI rank.
+  std::vector<ZenzRankPart> rank_parts;
   size_t segment_index = 0;
   size_t aggregates = 0;
   size_t changed_segments = 0;
   for (const ZenzProjectedSegment& segment : projection.segments) {
+    rank_parts.push_back(
+        {segment_index, segment.key, segment.mozc_value,
+         segment.zenz_value.empty() ? segment.mozc_value : segment.zenz_value,
+         segment.boundary_known && segment.changed &&
+             !segment.zenz_value.empty()});
     if (!segment.boundary_known) {
       segment_index += std::max<size_t>(1, segment.baseline_keys.size());
       ++aggregates;
@@ -8067,6 +8075,7 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
       pending_ai_rank_.mozc_value = pending.mozc_value;
       pending_ai_rank_.ai_value = prefix.value;
       pending_ai_rank_.changed = std::move(changed_candidates);
+      pending_ai_rank_.parts = std::move(rank_parts);
     }
   }
   ZenzDebugOutput(absl::StrCat(
@@ -8087,6 +8096,13 @@ void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
 // the preceding text, Zenz's correct answers were 1.5-2.2 better than the
 // normal conversion (eval/zenz_case_probe.py, 2026-11-25).
 constexpr double kAiRankPromoteMargin = 1.5;
+
+// Mozlumi: at most this many changed segments are judged again because their
+// new word is also elsewhere (zenz_repeat_check.h). Each one adds two scoring
+// jobs to the AI rank.
+constexpr size_t kAiRankMaxRepeatChecks = 3;
+// The scorer takes a prompt of up to 8192 bytes (zenz_scorer/posix_server.cc).
+constexpr size_t kAiRankMaxPromptBytes = 8000;
 
 void Session::ClearAiRank() { pending_ai_rank_ = PendingAiRank(); }
 
@@ -8161,11 +8177,47 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
   forced.push_back(absl::StrCat(reading, prepared.mozc_value));
   forced.push_back(absl::StrCat(reading, prepared.ai_value));
 
+  // Mozlumi: Zenz tends to make a word the same as another word of the same
+  // reading. A changed segment whose new word is also elsewhere in the
+  // sentence or in the preceding text is judged again: the preceding text is
+  // cut after the other word, and the text after the segment is left out.
+  // Each check is a pair of jobs (normal, AI) with their own prefix.
+  const std::vector<ZenzRepeatCheck> repeat_checks = FindZenzRepeatChecks(
+      assembled_context.left.prompt_context, prepared.parts,
+      kAiRankMaxRepeatChecks);
+  prepared.repeat_check_segments.clear();
+  for (const ZenzRepeatCheck& check : repeat_checks) {
+    ZenzPromptOptions check_options = prompt_options;
+    check_options.left_context = check.left_context;
+    check_options.right_context.clear();
+    std::string check_prefix = prompt_builder.Build("", check_options);
+    if (!absl::EndsWith(check_prefix, kOutputBegin)) {
+      return;
+    }
+    check_prefix.resize(check_prefix.size() - kOutputBegin.size());
+    const std::string check_reading = absl::StrCat(
+        prompt_builder.HiraganaToKatakana(check.key), kOutputBegin);
+    forced.push_back(zenz::MakeZenzTypoBatchJob(
+        check_prefix, absl::StrCat(check_reading, check.mozc_value)));
+    forced.push_back(zenz::MakeZenzTypoBatchJob(
+        check_prefix, absl::StrCat(check_reading, check.ai_value)));
+    prepared.repeat_check_segments.push_back(check.segment_index);
+  }
+  std::string batch_prompt = zenz::EncodeZenzTypoBatchPrompt(prefix, forced);
+  if (!prepared.repeat_check_segments.empty() &&
+      batch_prompt.size() > kAiRankMaxPromptBytes) {
+    // Without the checks, a repeated word could be promoted.
+    ZenzDebugOutput(absl::StrCat(
+        "[ai-rank] skipped reason=prompt_too_long repeat_checks=",
+        prepared.repeat_check_segments.size()));
+    return;
+  }
+
   ++zenz_live_generation_;
   ZenzLiveRequest request;
   request.generation = zenz_live_generation_;
   request.key = prepared.key;
-  request.prompt = zenz::EncodeZenzTypoBatchPrompt(prefix, forced);
+  request.prompt = std::move(batch_prompt);
   request.reading_katakana = prompt_builder.HiraganaToKatakana(prepared.key);
   request.left_context = assembled_context.left.prompt_context;
   request.pipe_name = config.zenz_live_correction_pipe_name();
@@ -8182,6 +8234,7 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
   ZenzDebugOutput(absl::StrCat(
       "[ai-rank] submit generation=", request.generation,
       " changed=", pending_ai_rank_.changed.size(),
+      " repeat_checks=", pending_ai_rank_.repeat_check_segments.size(),
       " context_reason=", assembled_context.left.reason,
       " context_source=",
       (zenz_context_from_recent_commit ? "recent_commit" : "app")));
@@ -8218,9 +8271,11 @@ bool Session::ApplyAiRank(commands::Command* command) {
   ClearAiRank();
 
   std::vector<zenz::ZenzTypoBatchResult> results;
+  const size_t repeat_checks = pending.repeat_check_segments.size();
   if (!response->ok || response->timeout ||
       !zenz::DecodeZenzTypoBatchResponse(response->value, &results) ||
-      results.size() != 2 || !results[0].ok || !results[1].ok) {
+      results.size() != 2 + 2 * repeat_checks || !results[0].ok ||
+      !results[1].ok) {
     ZenzDebugOutput(absl::StrCat(
         "[ai-rank] response not usable timeout=",
         ZenzBool(response->timeout), " reason=",
@@ -8240,11 +8295,43 @@ bool Session::ApplyAiRank(commands::Command* command) {
   // promotion is skipped, since the score was of the whole AI conversion.
   const size_t user_kept =
       context_->converter().CountUserChosenTopSegments(pending.changed);
+  // Mozlumi: a segment judged again (repeat check) keeps the normal
+  // conversion unless the AI conversion is still better by the margin
+  // without the other word. The other changed segments are promoted.
+  std::vector<size_t> repeat_kept_segments;
+  std::string repeat_margins;
+  for (size_t c = 0; c < repeat_checks; ++c) {
+    const zenz::ZenzTypoBatchResult& mozc_check = results[2 + 2 * c];
+    const zenz::ZenzTypoBatchResult& ai_check = results[3 + 2 * c];
+    if (!repeat_margins.empty()) {
+      absl::StrAppend(&repeat_margins, ",");
+    }
+    if (!mozc_check.ok || !ai_check.ok) {
+      absl::StrAppend(&repeat_margins, "none");
+      repeat_kept_segments.push_back(pending.repeat_check_segments[c]);
+      continue;
+    }
+    const double check_margin =
+        (ai_check.forced_logprob + ai_check.value_logprob) -
+        (mozc_check.forced_logprob + mozc_check.value_logprob);
+    absl::StrAppend(&repeat_margins,
+                    static_cast<int>(check_margin * 100) / 100.0);
+    if (check_margin < kAiRankPromoteMargin) {
+      repeat_kept_segments.push_back(pending.repeat_check_segments[c]);
+    }
+  }
+  std::vector<engine::ExternalSegmentCandidate> to_promote;
+  for (const engine::ExternalSegmentCandidate& item : pending.changed) {
+    if (std::find(repeat_kept_segments.begin(), repeat_kept_segments.end(),
+                  item.segment_index) == repeat_kept_segments.end()) {
+      to_promote.push_back(item);
+    }
+  }
   size_t promoted = 0;
-  if (promote && user_kept == 0 &&
+  if (promote && user_kept == 0 && !to_promote.empty() &&
       !context_->GetConfig().ai_candidate_first()) {
     promoted = context_->mutable_converter()->InsertExternalSegmentCandidates(
-        pending.changed, "AI", /*position=*/0);
+        to_promote, "AI", /*position=*/0);
     if (promoted > 0) {
       ai_candidate_badge_ = AiCandidateBadge::kApplied;
     }
@@ -8253,7 +8340,12 @@ bool Session::ApplyAiRank(commands::Command* command) {
   ZenzDebugOutput(absl::StrCat(
       "[ai-rank] result margin=", static_cast<int>(margin * 100) / 100.0,
       " threshold=", kAiRankPromoteMargin, " promote=", ZenzBool(promote),
-      " promoted=", promoted, " user_kept=", user_kept, " mozc_tail_chars=",
+      " promoted=", promoted, " user_kept=", user_kept,
+      " repeat_checks=", repeat_checks,
+      " repeat_kept=", repeat_kept_segments.size(),
+      repeat_checks > 0 ? absl::StrCat(" repeat_margins=", repeat_margins)
+                        : std::string(),
+      " mozc_tail_chars=",
       Util::CharsLen(results[0].value), " ai_tail_chars=",
       Util::CharsLen(results[1].value)));
   Output(command);

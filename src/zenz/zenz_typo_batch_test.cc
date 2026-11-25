@@ -23,6 +23,59 @@ TEST(ZenzTypoBatchTest, PromptRoundTrip) {
   EXPECT_EQ(decoded_forced, forced);
 }
 
+TEST(ZenzTypoBatchTest, JobPrefixRoundTrip) {
+  const std::string prefix = "\xEE\xB8\x82前の文\xEE\xB8\x80";
+  const std::string job_prefix = "\xEE\xB8\x82してたら\xEE\xB8\x80";
+  const std::vector<std::string> forced = {
+      "ドウキ\xEE\xB8\x81同期",
+      MakeZenzTypoBatchJob(job_prefix, "ドウキ\xEE\xB8\x81動悸")};
+  const std::string prompt = EncodeZenzTypoBatchPrompt(prefix, forced);
+  // An older scorer does not take it as a batch.
+  EXPECT_EQ(prompt.substr(0, kZenzTypoBatchMarkerV2.size()),
+            kZenzTypoBatchMarkerV2);
+
+  std::string decoded_prefix;
+  std::vector<std::string> decoded_forced;
+  ASSERT_TRUE(
+      DecodeZenzTypoBatchPrompt(prompt, &decoded_prefix, &decoded_forced));
+  EXPECT_EQ(decoded_prefix, prefix);
+  ASSERT_EQ(decoded_forced, forced);
+
+  std::string job_prompt;
+  std::string job_forced;
+  SplitZenzTypoBatchJob(decoded_prefix, decoded_forced[0], &job_prompt,
+                        &job_forced);
+  EXPECT_EQ(job_prompt, prefix);
+  EXPECT_EQ(job_forced, "ドウキ\xEE\xB8\x81同期");
+  SplitZenzTypoBatchJob(decoded_prefix, decoded_forced[1], &job_prompt,
+                        &job_forced);
+  EXPECT_EQ(job_prompt, job_prefix);
+  EXPECT_EQ(job_forced, "ドウキ\xEE\xB8\x81動悸");
+}
+
+TEST(ZenzTypoBatchTest, PlainBatchKeepsTheFirstVersion) {
+  const std::string prompt = EncodeZenzTypoBatchPrompt(
+      "\xEE\xB8\x80", {"キョウハ\xEE\xB8\x81"});
+  EXPECT_EQ(prompt.substr(0, kZenzTypoBatchMarker.size()),
+            kZenzTypoBatchMarker);
+}
+
+TEST(ZenzTypoBatchTest, JobPrefixNeedsTheSecondVersion) {
+  std::string prefix;
+  std::vector<std::string> forced;
+  const std::string job = MakeZenzTypoBatchJob("\xEE\xB8\x80", "キ");
+  EXPECT_FALSE(DecodeZenzTypoBatchPrompt(
+      std::string(kZenzTypoBatchMarker) + "p" +
+          std::string(kZenzTypoBatchSeparator) + job,
+      &prefix, &forced));
+  // A job without a forced part.
+  EXPECT_FALSE(DecodeZenzTypoBatchPrompt(
+      std::string(kZenzTypoBatchMarkerV2) + "p" +
+          std::string(kZenzTypoBatchSeparator) +
+          MakeZenzTypoBatchJob("\xEE\xB8\x80", ""),
+      &prefix, &forced));
+}
+
 TEST(ZenzTypoBatchTest, NormalPromptIsNotABatch) {
   std::string prefix;
   std::vector<std::string> forced;
