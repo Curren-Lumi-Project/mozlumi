@@ -806,6 +806,59 @@ ConfigDialog::ConfigDialog()
                         " AI が採点し、AI の変換の点数がはっきり高いときだけ"
                         " 1 番目にします。判定が外れることもあります。"
                         "上の設定がオンのときは使いません。"));
+  // Mozlumi: how readily the AI conversion becomes the top candidate
+  // (ai_auto_first_strength), right under the switch above.
+  {
+    QWidget *parent = aiConversionCheckBox->parentWidget();
+    auto *row = new QWidget(parent);
+    row->setObjectName(QStringLiteral("aiAutoFirstStrengthRow"));
+    auto *row_layout = new QHBoxLayout(row);
+    const QStyle *style = ai_candidate_auto_first_checkbox_->style();
+    const int indent =
+        style->pixelMetric(QStyle::PM_IndicatorWidth, nullptr,
+                           ai_candidate_auto_first_checkbox_) +
+        style->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, nullptr,
+                           ai_candidate_auto_first_checkbox_);
+    row_layout->setContentsMargins(indent, 0, 0, 0);
+    auto *label =
+        new QLabel(QString::fromUtf8("1 番目にする強さ："), row);
+    ai_auto_first_strength_combobox_ = new QComboBox(row);
+    ai_auto_first_strength_combobox_->setObjectName(
+        QStringLiteral("aiAutoFirstStrengthComboBox"));
+    // The item data is the Config::AiAutoFirstStrength value.
+    ai_auto_first_strength_combobox_->addItem(
+        QString::fromUtf8("強め（AI 寄り）"),
+        static_cast<int>(config::Config::AI_AUTO_FIRST_STRONG));
+    ai_auto_first_strength_combobox_->addItem(
+        QString::fromUtf8("ふつう"),
+        static_cast<int>(config::Config::AI_AUTO_FIRST_NORMAL));
+    ai_auto_first_strength_combobox_->addItem(
+        QString::fromUtf8("控えめ（いつもの変換寄り）"),
+        static_cast<int>(config::Config::AI_AUTO_FIRST_WEAK));
+    label->setBuddy(ai_auto_first_strength_combobox_);
+    row_layout->addWidget(label);
+    row_layout->addWidget(ai_auto_first_strength_combobox_);
+    row_layout->addStretch(1);
+    InsertWidgetAfter(ai_candidate_auto_first_description_label, row);
+    auto *description = new QLabel(
+        QString::fromUtf8("強めにすると AI の候補を 1 番目にすることが増え、"
+                          "控えめにするといつもの変換のままのことが増えます。"),
+        parent);
+    description->setObjectName(
+        QStringLiteral("aiAutoFirstStrengthDescription"));
+    description->setWordWrap(true);
+    description->setTextFormat(Qt::PlainText);
+    description->setSizePolicy(QSizePolicy::Expanding,
+                               QSizePolicy::Preferred);
+    description->setFont(ai_candidate_auto_first_description_label->font());
+    description->setContentsMargins(indent, 0, 0, 2);
+    InsertWidgetAfter(row, description);
+    // Used only with the switch above.
+    QObject::connect(ai_candidate_auto_first_checkbox_, &QCheckBox::toggled,
+                     row, &QWidget::setEnabled);
+    // The next setting goes under this description.
+    ai_candidate_auto_first_description_label = description;
+  }
   // Mozlumi: wait a little for the AI before a commit (wait_ai_before_commit).
   wait_ai_before_commit_checkbox_ = new QCheckBox(
       QString::fromUtf8("AI の答えが出るまで、確定を少し待つ"),
@@ -6396,6 +6449,15 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
     ai_candidate_auto_first_checkbox_->setChecked(
         config.ai_candidate_auto_first());
   }
+  if (ai_auto_first_strength_combobox_ != nullptr) {
+    const int index = ai_auto_first_strength_combobox_->findData(
+        static_cast<int>(config.ai_auto_first_strength()));
+    ai_auto_first_strength_combobox_->setCurrentIndex(index >= 0 ? index : 1);
+    if (ai_candidate_auto_first_checkbox_ != nullptr) {
+      ai_auto_first_strength_combobox_->parentWidget()->setEnabled(
+          config.ai_candidate_auto_first());
+    }
+  }
   if (zenz_context_across_apps_checkbox_ != nullptr) {
     zenz_context_across_apps_checkbox_->setChecked(
         config.zenz_context_across_apps());
@@ -6812,6 +6874,14 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   if (ai_candidate_auto_first_checkbox_ != nullptr) {
     config->set_ai_candidate_auto_first(
         ai_candidate_auto_first_checkbox_->isChecked());
+  }
+  if (ai_auto_first_strength_combobox_ != nullptr) {
+    const int strength =
+        ai_auto_first_strength_combobox_->currentData().toInt();
+    if (config::Config::AiAutoFirstStrength_IsValid(strength)) {
+      config->set_ai_auto_first_strength(
+          static_cast<config::Config::AiAutoFirstStrength>(strength));
+    }
   }
   if (zenz_context_across_apps_checkbox_ != nullptr) {
     config->set_zenz_context_across_apps(

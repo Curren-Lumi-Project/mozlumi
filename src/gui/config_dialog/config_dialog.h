@@ -134,6 +134,9 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   // preceding text better" (ai_candidate_auto_first). Zenz scores both
   // conversions; it is a score, not a guarantee.
   QCheckBox *ai_candidate_auto_first_checkbox_ = nullptr;
+  // Mozlumi: how readily the AI conversion becomes the top candidate
+  // (ai_auto_first_strength): strong, normal, weak.
+  QComboBox *ai_auto_first_strength_combobox_ = nullptr;
   // Mozlumi: "use the text committed in other applications as the AI
   // context" (zenz_context_across_apps). macOS only; nullptr elsewhere.
   QCheckBox *zenz_context_across_apps_checkbox_ = nullptr;

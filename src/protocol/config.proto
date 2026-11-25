@@ -786,6 +786,18 @@ message Config {
   // it a little (at most 300 ms), so that the AI conversion can become the top
   // candidate before the commit.
   optional bool wait_ai_before_commit = 5006 [default = true];
+  // Mozlumi: how much more likely (Zenz) the AI conversion has to be than the
+  // normal conversion to become the top candidate (ai_candidate_auto_first),
+  // also when a changed word is judged again. NORMAL: 1.5, STRONG: 1.0 (the
+  // AI conversion is put first more often), WEAK: 3.0 (the normal conversion
+  // is kept more often).
+  enum AiAutoFirstStrength {
+    AI_AUTO_FIRST_NORMAL = 0;
+    AI_AUTO_FIRST_STRONG = 1;
+    AI_AUTO_FIRST_WEAK = 2;
+  }
+  optional AiAutoFirstStrength ai_auto_first_strength = 5007
+      [default = AI_AUTO_FIRST_NORMAL];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;

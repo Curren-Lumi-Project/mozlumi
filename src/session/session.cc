@@ -8097,6 +8097,22 @@ void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
 // normal conversion (eval/zenz_case_probe.py, 2026-11-25).
 constexpr double kAiRankPromoteMargin = 1.5;
 
+// Mozlumi: the margin chosen in the settings (Config.ai_auto_first_strength,
+// Build 59). STRONG puts the AI conversion first more often; WEAK keeps the
+// normal conversion more often.
+namespace {
+double AiRankPromoteMargin(const config::Config& config) {
+  switch (config.ai_auto_first_strength()) {
+    case config::Config::AI_AUTO_FIRST_STRONG:
+      return 1.0;
+    case config::Config::AI_AUTO_FIRST_WEAK:
+      return 3.0;
+    default:
+      return kAiRankPromoteMargin;
+  }
+}
+}  // namespace
+
 // Mozlumi: at most this many changed segments are judged again because their
 // new word is also elsewhere (zenz_repeat_check.h). Each one adds two scoring
 // jobs to the AI rank.
@@ -8291,7 +8307,8 @@ bool Session::ApplyAiRank(commands::Command* command) {
   const double mozc_score = results[0].forced_logprob + results[0].value_logprob;
   const double ai_score = results[1].forced_logprob + results[1].value_logprob;
   const double margin = ai_score - mozc_score;
-  const bool promote = margin >= kAiRankPromoteMargin;
+  const double promote_margin = AiRankPromoteMargin(context_->GetConfig());
+  const bool promote = margin >= promote_margin;
   // Mozlumi: checked again here, right before the change: the AI does not
   // replace a word the user chose (learned or user dictionary). The whole
   // promotion is skipped, since the score was of the whole AI conversion.
@@ -8368,7 +8385,7 @@ bool Session::ApplyAiRank(commands::Command* command) {
             ? absl::StrCat(round2(*scores.local - scores.mozc))
             : std::string("none"));
     const std::string value =
-        ChooseZenzRepeatCheckValue(check, scores, kAiRankPromoteMargin);
+        ChooseZenzRepeatCheckValue(check, scores, promote_margin);
     if (value.empty()) {
       repeat_kept_segments.push_back(check.segment_index);
     } else if (value != check.ai_value) {
@@ -8401,7 +8418,7 @@ bool Session::ApplyAiRank(commands::Command* command) {
   // Scores only: the text is not logged.
   ZenzDebugOutput(absl::StrCat(
       "[ai-rank] result margin=", static_cast<int>(margin * 100) / 100.0,
-      " threshold=", kAiRankPromoteMargin, " promote=", ZenzBool(promote),
+      " threshold=", promote_margin, " promote=", ZenzBool(promote),
       " promoted=", promoted, " user_kept=", user_kept,
       " repeat_checks=", repeat_checks,
       " repeat_kept=", repeat_kept_segments.size(),
