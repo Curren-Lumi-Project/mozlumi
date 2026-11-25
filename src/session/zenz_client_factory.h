@@ -23,6 +23,11 @@ class ZenzClient;
 // until a platform transport is explicitly implemented.
 std::unique_ptr<ZenzClient> CreateZenzClient();
 
+// For tests: while disabled, CreateZenzClient() returns nullptr (the AI
+// requests fail at once), so that unit tests never talk to, or start, the
+// Zenz scorer of the Mozlumi installed on the machine.
+void SetZenzClientDisabledForTest(bool disabled);
+
 #if defined(__APPLE__) && TARGET_OS_OSX
 namespace internal {
 // Starts the asynchronous waitpid() reaper for a child owned by this process.

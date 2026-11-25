@@ -187,9 +187,33 @@ mozc_cc_binary(
             ":posix_runtime",
             "//zenz:unix_socket_path",
         ],
-        "@platforms//os:windows": [":mozc_zenz_scorer_resources"],
+        "@platforms//os:windows": [
+            ":mozc_zenz_scorer_resources",
+            ":typo_batch_runner",
+            "//zenz:typo_batch",
+        ],
         "//conditions:default": [],
     }),
+)
+
+# Mozlumi: the typo batch jobs of the Windows scorer (main.cc). Built and
+# tested on every platform, so that macOS tests it too.
+mozc_cc_library(
+    name = "typo_batch_runner",
+    srcs = ["typo_batch_runner.cc"],
+    hdrs = ["typo_batch_runner.h"],
+    deps = ["//zenz:typo_batch"],
+)
+
+mozc_cc_test(
+    name = "typo_batch_runner_test",
+    size = "small",
+    srcs = ["typo_batch_runner_test.cc"],
+    deps = [
+        ":typo_batch_runner",
+        "//testing:gunit_main",
+        "//zenz:typo_batch",
+    ],
 )
 
 mozc_win32_resource_from_template(

@@ -59,6 +59,7 @@
 #include "session/zenz_live_corrector.h"
 #include "session/zenz_output_validator.h"
 #include "session/zenz_recent_commit_context.h"
+#include "session/zenz_repeat_check.h"
 #include "session/zenz_segment_projection.h"
 #include "transliteration/transliteration.h"
 
@@ -558,13 +559,34 @@ class Session {
     std::string mozc_value;
     std::string ai_value;
     std::vector<engine::ExternalSegmentCandidate> changed;
+    // The whole conversion in order, and the changed segments judged again
+    // because their new word is also elsewhere (zenz_repeat_check.h). The
+    // results of their three jobs (normal, AI, Zenz's own answer) follow the
+    // two whole conversions, in this order.
+    std::vector<ZenzRankPart> parts;
+    std::vector<ZenzRepeatCheck> repeat_checks;
+    // Unchanged segments whose word is also before them (Build 60). Their two
+    // jobs (the segment, Zenz's own answer) follow the repeat checks. When
+    // nothing is changed, the two whole conversions are not sent.
+    std::vector<ZenzSameWordCheck> same_checks;
     absl::Time issued_at;
     uint32_t poll_count = 0;
   };
   PendingAiRank pending_ai_rank_;
+  // Mozlumi: true while FinishAiWorkBeforeCommit() applies the AI results;
+  // the typo scoring is not started then (the conversion is being committed).
+  bool finishing_ai_before_commit_ = false;
   // Mozlumi: recently committed text, Zenz's left context for applications
-  // that do not provide surrounding text. Memory only.
+  // that do not provide surrounding text. Memory only. Used when the client
+  // did not tell the application (zenz_context_app_ is empty); otherwise the
+  // text is kept by application in ZenzRecentCommitStore.
   ZenzRecentCommitContext recent_commit_context_;
+  // Mozlumi: the application of this input (SET_ZENZ_CONTEXT_APP), e.g. the
+  // macOS bundle identifier. Empty when the client does not tell it.
+  std::string zenz_context_app_;
+  // Mozlumi: the recent commits returned by the last GetZenzContextView(), so
+  // that the returned view can point to them.
+  mutable std::string recent_commit_snapshot_;
   // Mozlumi: romaji inputs converted before the next commit, to learn a typo
   // that the user fixes by typing again (prediction::TypoSelfFixStore).
   std::vector<std::pair<std::string, absl::Time>> self_fix_converted_raws_;
@@ -902,6 +924,10 @@ class Session {
   bool ApplyAiRank(commands::Command* command);
   void AttachAiRankPollCallback(commands::Command* command) const;
   void ClearAiRank();
+  // Mozlumi: before a conversion is committed, waits a little for the AI
+  // candidates and the AI rank still working on it, and applies them
+  // (Config.wait_ai_before_commit).
+  void FinishAiWorkBeforeCommit();
   // Mozlumi: the client context for Zenz. When the application provided no
   // preceding text at all, recently committed text is used instead
   // (`*from_recent_commit` tells which).
@@ -912,6 +938,15 @@ class Session {
   void UpdateRecentCommitContext(const commands::Command& command,
                                  ImeContext::State state_before,
                                  bool from_send_key);
+  // Mozlumi: the recent commits of this input: kept by application when the
+  // client told the application, else in this session only.
+  void RecentCommitOnCommit(absl::string_view text, absl::Time now);
+  void RecentCommitOnLineBreak(absl::Time now);
+  void RecentCommitOnBackspace(absl::Time now);
+  void RecentCommitClear();
+  std::string RecentCommitGet(absl::Time now) const;
+  // "session", "per_app" or "across_apps", for the debug log.
+  const char* RecentCommitScope() const;
   // Mozlumi: remembers converted inputs, and when the committed input differs
   // from one of them by a small edit, learns it as the user's typo fix.
   void UpdateSelfFixLearning(const commands::Command& command,

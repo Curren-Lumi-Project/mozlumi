@@ -480,6 +480,13 @@ message SessionCommand {
     // committed just before is no longer the text before the cursor, so forget
     // it and do not use it as the context of the next AI conversion.
     FORGET_RECENT_COMMIT_CONTEXT = 33;
+
+    // Mozlumi: the application that this input belongs to (the macOS bundle
+    // identifier in `text`), sent when the input is activated. The recently
+    // committed text used as the AI context is then kept by application
+    // (session::ZenzRecentCommitStore), and FORGET_RECENT_COMMIT_CONTEXT
+    // keeps it for the next time the user comes back.
+    SET_ZENZ_CONTEXT_APP = 34;
   }
   required CommandType type = 1;
 

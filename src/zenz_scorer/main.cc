@@ -24,8 +24,10 @@
 #include <thread>
 #include <vector>
 
+#include "zenz/zenz_typo_batch.h"
 #include "zenz/zenz_wire_protocol.h"
 #include "zenz_scorer/synchronous_io_deadline.h"
+#include "zenz_scorer/typo_batch_runner.h"
 
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Bcrypt.lib")
@@ -1135,15 +1137,16 @@ bool LaunchLlamaServer(const Options& options,
   return true;
 }
 
-bool HttpPostCompletion(
+// Mozlumi: posts `body` to llama-server's /completion and returns the
+// response body. Shared by the conversion and the typo batch.
+bool HttpPostLlamaCompletionBody(
     const Options& options,
     int port,
-    const std::string& prompt,
+    const std::string& body,
     uint32_t timeout_msec,
-    uint32_t max_output_chars,
-    std::string* value,
+    std::string* response_body_out,
     std::string* debug) {
-  value->clear();
+  response_body_out->clear();
   debug->clear();
 
   HINTERNET session = WinHttpOpen(
@@ -1189,57 +1192,17 @@ bool HttpPostCompletion(
     return false;
   }
 
-  const int requested_n_predict =
-      max_output_chars > 0 ? static_cast<int>(max_output_chars)
-                          : options.n_predict;
-  const int n_predict =
-      std::max(4, std::min(options.n_predict, requested_n_predict));
-
-  std::string body;
-  body += "{";
-  body += "\"prompt\":\"";
-  body += JsonEscapeUtf8(prompt);
-  body += "\",";
-  body += "\"n_predict\":";
-  body += std::to_string(n_predict);
-  body += ",";
-  body += "\"temperature\":0.0,";
-  body += "\"top_k\":1,";
-  body += "\"top_p\":1.0,";
-  body += "\"stream\":false,";
-  body += "\"cache_prompt\":true,";
-  body += "\"stop\":["
-          "\"\\uee00\","
-          "\"\\uee01\","
-          "\"\\uee02\","
-          "\"\\uee03\","
-          "\"\\uee04\","
-          "\"\\uee05\","
-          "\"\\uee06\","
-          "\"\\uee07\","
-          "\"\\uee08\","
-          "\"\\uee09\","
-          "\"\\uee0a\","
-          "\"\\uee0b\","
-          "\"\\uee0c\","
-          "\"\\uee0d\","
-          "\"\\uee0e\","
-          "\"\\uee0f\","
-          "\"\\n\","
-          "\"\\r\""
-          "]";
-  body += "}";
-
   std::wstring headers = L"Content-Type: application/json; charset=utf-8\r\n";
   headers += L"Authorization: Bearer ";
   headers += Utf8ToWide(options.api_key);
   headers += L"\r\n";
 
+  // WinHttpSendRequest takes non-const optional data, but does not change it.
   BOOL ok = WinHttpSendRequest(
       request,
       headers.c_str(),
       static_cast<DWORD>(-1L),
-      body.data(),
+      const_cast<char*>(body.data()),
       static_cast<DWORD>(body.size()),
       static_cast<DWORD>(body.size()),
       0);
@@ -1308,6 +1271,68 @@ bool HttpPostCompletion(
   WinHttpCloseHandle(connect);
   WinHttpCloseHandle(session);
 
+  *response_body_out = std::move(response_body);
+  return true;
+}
+
+bool HttpPostCompletion(
+    const Options& options,
+    int port,
+    const std::string& prompt,
+    uint32_t timeout_msec,
+    uint32_t max_output_chars,
+    std::string* value,
+    std::string* debug) {
+  value->clear();
+  debug->clear();
+
+  const int requested_n_predict =
+      max_output_chars > 0 ? static_cast<int>(max_output_chars)
+                          : options.n_predict;
+  const int n_predict =
+      std::max(4, std::min(options.n_predict, requested_n_predict));
+
+  std::string body;
+  body += "{";
+  body += "\"prompt\":\"";
+  body += JsonEscapeUtf8(prompt);
+  body += "\",";
+  body += "\"n_predict\":";
+  body += std::to_string(n_predict);
+  body += ",";
+  body += "\"temperature\":0.0,";
+  body += "\"top_k\":1,";
+  body += "\"top_p\":1.0,";
+  body += "\"stream\":false,";
+  body += "\"cache_prompt\":true,";
+  body += "\"stop\":["
+          "\"\\uee00\","
+          "\"\\uee01\","
+          "\"\\uee02\","
+          "\"\\uee03\","
+          "\"\\uee04\","
+          "\"\\uee05\","
+          "\"\\uee06\","
+          "\"\\uee07\","
+          "\"\\uee08\","
+          "\"\\uee09\","
+          "\"\\uee0a\","
+          "\"\\uee0b\","
+          "\"\\uee0c\","
+          "\"\\uee0d\","
+          "\"\\uee0e\","
+          "\"\\uee0f\","
+          "\"\\n\","
+          "\"\\r\""
+          "]";
+  body += "}";
+
+  std::string response_body;
+  if (!HttpPostLlamaCompletionBody(options, port, body, timeout_msec,
+                                   &response_body, debug)) {
+    return false;
+  }
+
   std::string content;
   if (!ExtractJsonStringField(response_body, "content", &content)) {
     *debug = "content_field_not_found";
@@ -1323,6 +1348,51 @@ bool HttpPostCompletion(
   *value = std::move(content);
   *debug = "ok";
   return true;
+}
+
+// Mozlumi: one job of a typo batch (typo_batch_runner.h): the grammar forces
+// the job's text, and the log-probability of each token is returned. The same
+// request as the macOS scorer (llama_http_client.cc BuildJsonBody).
+::mozc::zenz_scorer::ZenzBatchCompletionResult HttpPostScoringCompletion(
+    const Options& options, int port,
+    const ::mozc::zenz_scorer::ZenzBatchCompletionRequest& job) {
+  ::mozc::zenz_scorer::ZenzBatchCompletionResult result;
+  std::string body;
+  body += "{";
+  body += "\"prompt\":\"";
+  body += JsonEscapeUtf8(job.prompt);
+  body += "\",";
+  body += "\"n_predict\":";
+  body += std::to_string(std::clamp(job.n_predict, 1, kMaxNPredict));
+  body += ",";
+  body += "\"temperature\":0.0,";
+  body += "\"top_k\":1,";
+  body += "\"top_p\":1.0,";
+  body += "\"stream\":false,";
+  body += "\"cache_prompt\":true,";
+  body += "\"grammar\":\"";
+  body += JsonEscapeUtf8(job.grammar);
+  body += "\",";
+  body += "\"n_probs\":1,";
+  body += "\"post_sampling_probs\":false,";
+  body += "\"stop\":[\"\\n\",\"\\r\"]";
+  body += "}";
+
+  std::string response_body;
+  std::string debug;
+  if (!HttpPostLlamaCompletionBody(options, port, body, job.timeout_msec,
+                                   &response_body, &debug)) {
+    return result;
+  }
+  if (!ExtractJsonStringField(response_body, "content", &result.content) ||
+      !::mozc::zenz_scorer::ParseZenzCompletionTokenLogprobs(response_body,
+                                                             &result.tokens)) {
+    result.content.clear();
+    result.tokens.clear();
+    return result;
+  }
+  result.ok = true;
+  return result;
 }
 
 void LogLlamaProcessExit(const wchar_t* prefix,
@@ -1669,6 +1739,33 @@ void HandleClient(HANDLE pipe, const Options& options, PipeDeadline deadline) {
     const DWORD latency = GetTickCount() - start;
     SendResponse(pipe, request_header.generation, kZenzWireStatusTimeout,
                  latency, "", debug, deadline);
+    return;
+  }
+
+  // Mozlumi: a typo batch (the AI rank, its checks and the Zenz typo choice)
+  // is scored job by job, as on macOS (llama_backend.cc RunTypoBatch).
+  std::string batch_prefix;
+  std::vector<std::string> batch_jobs;
+  if (::mozc::zenz::DecodeZenzTypoBatchPrompt(prompt, &batch_prefix,
+                                              &batch_jobs)) {
+    size_t succeeded = 0;
+    const std::string batch_value = ::mozc::zenz_scorer::RunZenzTypoBatch(
+        batch_prefix, batch_jobs, timeout_msec, options.n_predict,
+        [&](const ::mozc::zenz_scorer::ZenzBatchCompletionRequest& job) {
+          return HttpPostScoringCompletion(options, port, job);
+        },
+        &succeeded);
+    const DWORD latency = GetTickCount() - start;
+    const std::string batch_debug = "typo_batch_" +
+                                    std::to_string(succeeded) + "_of_" +
+                                    std::to_string(batch_jobs.size());
+    Debug(L"batch response gen=" +
+          std::to_wstring(request_header.generation) + L" latency=" +
+          std::to_wstring(latency) + L" jobs=" +
+          std::to_wstring(batch_jobs.size()) + L" ok=" +
+          std::to_wstring(succeeded));
+    SendResponse(pipe, request_header.generation, kZenzWireStatusOk, latency,
+                 batch_value, batch_debug, deadline);
     return;
   }
 

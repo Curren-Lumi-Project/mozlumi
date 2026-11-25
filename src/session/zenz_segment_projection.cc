@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "base/util.h"
 
 namespace mozc::session {
@@ -89,6 +90,67 @@ bool IsFullWidthAsciiPunctuation(char32_t c) {
 // request keeps the composer's ASCII form.  Keep this mapping deliberately
 // narrower than NFKC so letters, numbers, kana, and kanji remain identity
 // sensitive.
+// Mozlumi: the hiragana (whole characters) that both `key` and `value` end
+// with. "どうきしてたら" and "動悸してたら" end with "してたら".
+std::string CommonHiraganaEnding(absl::string_view key,
+                                 absl::string_view value) {
+  const auto last_char_begin = [](absl::string_view text, size_t end) {
+    size_t begin = end - 1;
+    while (begin > 0 &&
+           (static_cast<unsigned char>(text[begin]) & 0xC0) == 0x80) {
+      --begin;
+    }
+    return begin;
+  };
+  size_t key_end = key.size();
+  size_t value_end = value.size();
+  while (key_end > 0 && value_end > 0) {
+    const size_t key_begin = last_char_begin(key, key_end);
+    const size_t value_begin = last_char_begin(value, value_end);
+    const absl::string_view key_char =
+        key.substr(key_begin, key_end - key_begin);
+    if (key_char != value.substr(value_begin, value_end - value_begin) ||
+        Util::GetScriptType(key_char) != Util::HIRAGANA) {
+      break;
+    }
+    key_end = key_begin;
+    value_end = value_begin;
+  }
+  return std::string(key.substr(key_end));
+}
+
+// Mozlumi: splits `value` (Zenz's conversion of the gap of `segments`) at the
+// hiragana endings of the segments: when every segment but the last ends with
+// the same hiragana in its reading and its normal conversion, and the ending
+// is found exactly once in the rest of `value`, the boundary is right after
+// it. Otherwise false: the boundary is not guessed.
+bool SplitGapAtHiraganaEndings(absl::Span<const ZenzBaselineSegment> segments,
+                               absl::string_view value,
+                               std::vector<absl::string_view>* pieces) {
+  pieces->clear();
+  size_t pos = 0;
+  for (size_t i = 0; i + 1 < segments.size(); ++i) {
+    const std::string ending =
+        CommonHiraganaEnding(segments[i].key, segments[i].value);
+    if (ending.empty()) {
+      return false;
+    }
+    const size_t found = value.find(ending, pos);
+    if (found == absl::string_view::npos ||
+        value.find(ending, found + ending.size()) != absl::string_view::npos) {
+      return false;
+    }
+    const size_t end = found + ending.size();
+    pieces->push_back(value.substr(pos, end - pos));
+    pos = end;
+  }
+  if (pos >= value.size()) {
+    return false;
+  }
+  pieces->push_back(value.substr(pos));
+  return true;
+}
+
 std::string NormalizeProjectionPunctuationKey(absl::string_view key) {
   std::string result;
   result.reserve(key.size());
@@ -301,6 +363,22 @@ ZenzSegmentProjection ProjectZenzValueToMozcSegments(
     if (gap_mozc_value == zenz_value) {
       for (int i = first_index; i <= last_index; ++i) {
         if (!append_baseline_segment(i, projection_segments[i].value)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // Mozlumi: adjacent changed segments, e.g. both "どうき" of
+    // "どうきしてたら｜どうきがしてきた", are split at their hiragana endings
+    // when the endings show the boundary without doubt (Build 59).
+    std::vector<absl::string_view> pieces;
+    if (SplitGapAtHiraganaEndings(
+            absl::MakeConstSpan(projection_segments)
+                .subspan(first_index, gap_size),
+            zenz_value, &pieces)) {
+      for (int i = first_index; i <= last_index; ++i) {
+        if (!append_baseline_segment(i, pieces[i - first_index])) {
           return false;
         }
       }

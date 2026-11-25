@@ -47,6 +47,7 @@
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "base/clock.h"
 #include "base/util.h"
@@ -66,6 +67,8 @@
 #include "session/zenz_client_factory.h"
 #include "session/zenz_context_assembler.h"
 #include "session/zenz_prompt_builder.h"
+#include "session/zenz_recent_commit_store.h"
+#include "session/zenz_repeat_check.h"
 #include "session/zenz_text_privacy_analyzer.h"
 #include "session/zenz_typo_decision.h"
 #include "zenz/zenz_typo_batch.h"
@@ -2275,12 +2278,32 @@ bool Session::SendCommand(commands::Command* command) {
       result = ResumeCommandSequence(command);
       break;
     case commands::SessionCommand::FORGET_RECENT_COMMIT_CONTEXT:
-      // Mozlumi: sent by the client when the focus leaves this input. The
-      // recent commits belong to the previous field or window.
-      recent_commit_context_.Clear();
-      ZenzDebugOutput("[zenz] recent_commit cleared reason=focus_change");
+      // Mozlumi: sent by the client when the focus leaves this input. When
+      // the client told the application, the recent commits are kept by
+      // application (ZenzRecentCommitStore) and are used again when the user
+      // comes back. Otherwise they belong to the previous field or window.
+      if (zenz_context_app_.empty()) {
+        recent_commit_context_.Clear();
+        ZenzDebugOutput("[zenz] recent_commit cleared reason=focus_change");
+      } else {
+        ZenzDebugOutput(absl::StrCat(
+            "[zenz] recent_commit kept reason=focus_change scope=",
+            RecentCommitScope()));
+      }
       result = DoNothing(command);
       break;
+    case commands::SessionCommand::SET_ZENZ_CONTEXT_APP: {
+      // Mozlumi: the application of this input, sent by the client when the
+      // input is activated (macOS bundle identifier).
+      constexpr size_t kMaxZenzContextAppBytes = 256;
+      const std::string& app = command->input().command().text();
+      zenz_context_app_ =
+          app.size() <= kMaxZenzContextAppBytes ? app : std::string();
+      ZenzDebugOutput(absl::StrCat("[zenz] context app known=",
+                                   ZenzBool(!zenz_context_app_.empty())));
+      result = DoNothing(command);
+      break;
+    }
 
     case commands::SessionCommand::RECONVERT_SELECTION_OR_INSERT_SPACE:
       // This command is a client-side callback command.  It should normally be
@@ -7800,7 +7823,10 @@ void Session::MaybeScheduleAiCandidates(commands::Command* command) {
       ZenzRedactedTextStats("mozc_value", mozc_value),
       " segments=", pending_ai_candidates_.baseline_segments.size(),
       " context_reason=", assembled_context.left.reason,
-      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app")));
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app"),
+      " context_scope=",
+      (zenz_context_from_recent_commit ? RecentCommitScope() : "app"), " ",
+      ZenzRedactedTextStats("context", assembled_context.left.prompt_context)));
 
   EnsureZenzLiveCorrector()->Submit(std::move(request));
   AttachAiCandidatesPollCallback(command);
@@ -7819,7 +7845,8 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
       command->input().command().live_conversion_generation() ==
           pending_ai_rank_.generation) {
     const bool result = ApplyAiRank(command);
-    if (!pending_ai_rank_.pending && !command->output().has_callback()) {
+    if (!pending_ai_rank_.pending && !command->output().has_callback() &&
+        !finishing_ai_before_commit_) {
       MaybeScheduleTypoZenz(command);
     }
     return result;
@@ -7837,9 +7864,62 @@ bool Session::ApplyAiCandidates(commands::Command* command) {
         return result;
       }
     }
-    MaybeScheduleTypoZenz(command);
+    if (!finishing_ai_before_commit_) {
+      MaybeScheduleTypoZenz(command);
+    }
   }
   return result;
+}
+
+// Mozlumi: the longest wait before a commit for the AI
+// (Config.wait_ai_before_commit). The AI candidates and the AI rank usually
+// take about 55 ms and 80 ms (zenz_debug.log, 2026-11-25).
+constexpr int kAiWaitBeforeCommitMaxMsec = 300;
+constexpr int kAiWaitBeforeCommitStepMsec = 5;
+
+void Session::FinishAiWorkBeforeCommit() {
+  if (context_->state() != ImeContext::CONVERSION ||
+      !context_->GetConfig().wait_ai_before_commit() ||
+      zenz_live_corrector_ == nullptr ||
+      (!pending_ai_candidates_.pending && !pending_ai_rank_.pending)) {
+    return;
+  }
+  const absl::Time start = Clock::GetAbslTime();
+  finishing_ai_before_commit_ = true;
+  bool done = false;
+  // Counted by steps, since tests may stop Clock, and by Clock, since a step
+  // takes longer than its sleep (1.04 s instead of 0.3 s on 2026-11-25).
+  for (int waited = 0;; waited += kAiWaitBeforeCommitStepMsec) {
+    // The same as the client's delayed callback: applies the result when it
+    // is ready, and submits the AI rank after the AI candidates.
+    const bool rank = pending_ai_rank_.pending;
+    commands::Command poll;
+    poll.mutable_input()->set_type(commands::Input::SEND_COMMAND);
+    commands::SessionCommand* session_command =
+        poll.mutable_input()->mutable_command();
+    session_command->set_type(commands::SessionCommand::APPLY_AI_CANDIDATES);
+    session_command->set_live_conversion_generation(
+        rank ? pending_ai_rank_.generation
+             : pending_ai_candidates_.generation);
+    session_command->set_live_conversion_key(
+        rank ? pending_ai_rank_.key : pending_ai_candidates_.key);
+    ApplyAiCandidates(&poll);
+    if (!pending_ai_candidates_.pending && !pending_ai_rank_.pending) {
+      done = true;
+      break;
+    }
+    if (waited >= kAiWaitBeforeCommitMaxMsec ||
+        Clock::GetAbslTime() - start >=
+            absl::Milliseconds(kAiWaitBeforeCommitMaxMsec)) {
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(kAiWaitBeforeCommitStepMsec));
+  }
+  finishing_ai_before_commit_ = false;
+  ZenzDebugOutput(absl::StrCat(
+      "[ai-wait] before_commit result=", (done ? "done" : "timeout"),
+      " waited_ms=",
+      absl::ToInt64Milliseconds(Clock::GetAbslTime() - start)));
 }
 
 bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
@@ -7936,10 +8016,17 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
   // segments and is skipped.
   std::vector<engine::ExternalSegmentCandidate> candidates;
   std::vector<engine::ExternalSegmentCandidate> changed_candidates;
+  // Mozlumi: the whole conversion in order, for the AI rank.
+  std::vector<ZenzRankPart> rank_parts;
   size_t segment_index = 0;
   size_t aggregates = 0;
   size_t changed_segments = 0;
   for (const ZenzProjectedSegment& segment : projection.segments) {
+    rank_parts.push_back(
+        {segment_index, segment.key, segment.mozc_value,
+         segment.zenz_value.empty() ? segment.mozc_value : segment.zenz_value,
+         segment.boundary_known && segment.changed &&
+             !segment.zenz_value.empty()});
     if (!segment.boundary_known) {
       segment_index += std::max<size_t>(1, segment.baseline_keys.size());
       ++aggregates;
@@ -7991,7 +8078,21 @@ bool Session::ApplyAiCandidatesInternal(commands::Command* command) {
       pending_ai_rank_.mozc_value = pending.mozc_value;
       pending_ai_rank_.ai_value = prefix.value;
       pending_ai_rank_.changed = std::move(changed_candidates);
+      pending_ai_rank_.parts = std::move(rank_parts);
     }
+  }
+  // Mozlumi (Build 60): when the AI changes nothing that can be put first (it
+  // agrees, or its changes could not be placed), a word that is also in the
+  // text before it may still be one that both copied ("高校の肛門" after
+  // "肛門"); the AI rank judges such words again (FindZenzSameWordChecks).
+  if (changed_segments == 0 && !ai_first &&
+      config.ai_candidate_auto_first()) {
+    pending_ai_rank_.prepared = true;
+    pending_ai_rank_.key = pending.key;
+    pending_ai_rank_.mozc_value = pending.mozc_value;
+    pending_ai_rank_.ai_value = prefix.value;
+    pending_ai_rank_.changed.clear();
+    pending_ai_rank_.parts = std::move(rank_parts);
   }
   ZenzDebugOutput(absl::StrCat(
       "[ai-candidates] result agrees=", ZenzBool(agrees_with_mozc),
@@ -8007,8 +8108,33 @@ void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
 
 // Mozlumi: how much more likely (natural log) the AI conversion has to be than
 // the normal conversion to become the top candidate. Tuned with the
-// "[ai-rank] result margin=" lines of zenz_debug.log.
-constexpr double kAiRankPromoteMargin = 2.0;
+// "[ai-rank] result margin=" lines of zenz_debug.log. 1.5 since 1.3.3: with
+// the preceding text, Zenz's correct answers were 1.5-2.2 better than the
+// normal conversion (eval/zenz_case_probe.py, 2026-11-25).
+constexpr double kAiRankPromoteMargin = 1.5;
+
+// Mozlumi: the margin chosen in the settings (Config.ai_auto_first_strength,
+// Build 59). STRONG puts the AI conversion first more often; WEAK keeps the
+// normal conversion more often.
+namespace {
+double AiRankPromoteMargin(const config::Config& config) {
+  switch (config.ai_auto_first_strength()) {
+    case config::Config::AI_AUTO_FIRST_STRONG:
+      return 1.0;
+    case config::Config::AI_AUTO_FIRST_WEAK:
+      return 3.0;
+    default:
+      return kAiRankPromoteMargin;
+  }
+}
+}  // namespace
+
+// Mozlumi: at most this many changed segments are judged again because their
+// new word is also elsewhere (zenz_repeat_check.h). Each one adds two scoring
+// jobs to the AI rank.
+constexpr size_t kAiRankMaxRepeatChecks = 3;
+// The scorer takes a prompt of up to 8192 bytes (zenz_scorer/posix_server.cc).
+constexpr size_t kAiRankMaxPromptBytes = 8000;
 
 void Session::ClearAiRank() { pending_ai_rank_ = PendingAiRank(); }
 
@@ -8028,7 +8154,7 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
   PendingAiRank prepared = std::move(pending_ai_rank_);
   ClearAiRank();
   const config::Config& config = context_->GetConfig();
-  if (!prepared.prepared || prepared.changed.empty() ||
+  if (!prepared.prepared ||
       !config.use_ai_conversion() || !config.ai_candidate_auto_first() ||
       config.ai_candidate_first() ||
       context_->state() != ImeContext::CONVERSION ||
@@ -8036,6 +8162,16 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
           commands::Context::PASSWORD ||
       command->output().has_callback() ||
       context_->composer().GetQueryForConversion() != prepared.key) {
+    return;
+  }
+  // Mozlumi: the AI does not replace a word the user chose (learned or user
+  // dictionary). Then the AI conversion is only offered as the 2nd candidate,
+  // and the rank is not needed.
+  const size_t user_kept =
+      context_->converter().CountUserChosenTopSegments(prepared.changed);
+  if (user_kept > 0) {
+    ZenzDebugOutput(absl::StrCat(
+        "[ai-rank] skipped reason=user_choice user_kept=", user_kept));
     return;
   }
 
@@ -8070,14 +8206,81 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
   const std::string reading = absl::StrCat(
       prompt_builder.HiraganaToKatakana(prepared.key), kOutputBegin);
   std::vector<std::string> forced;
-  forced.push_back(absl::StrCat(reading, prepared.mozc_value));
-  forced.push_back(absl::StrCat(reading, prepared.ai_value));
+  if (!prepared.changed.empty()) {
+    forced.push_back(absl::StrCat(reading, prepared.mozc_value));
+    forced.push_back(absl::StrCat(reading, prepared.ai_value));
+  }
+
+  // Mozlumi: Zenz tends to make a word the same as another word of the same
+  // reading. A changed segment whose new word is also elsewhere in the
+  // sentence or in the preceding text is judged again: the preceding text is
+  // cut after the other word, and the text after the segment is left out.
+  // Each check is three jobs with their own prefix: the normal conversion,
+  // the AI conversion, and Zenz's own answer (Build 58).
+  std::vector<ZenzRepeatCheck> repeat_checks = FindZenzRepeatChecks(
+      assembled_context.left.prompt_context, prepared.parts,
+      kAiRankMaxRepeatChecks);
+  prepared.repeat_checks.clear();
+  for (ZenzRepeatCheck& check : repeat_checks) {
+    ZenzPromptOptions check_options = prompt_options;
+    check_options.left_context = check.left_context;
+    check_options.right_context.clear();
+    std::string check_prefix = prompt_builder.Build("", check_options);
+    if (!absl::EndsWith(check_prefix, kOutputBegin)) {
+      return;
+    }
+    check_prefix.resize(check_prefix.size() - kOutputBegin.size());
+    const std::string check_reading = absl::StrCat(
+        prompt_builder.HiraganaToKatakana(check.key), kOutputBegin);
+    forced.push_back(zenz::MakeZenzTypoBatchJob(
+        check_prefix, absl::StrCat(check_reading, check.mozc_value)));
+    forced.push_back(zenz::MakeZenzTypoBatchJob(
+        check_prefix, absl::StrCat(check_reading, check.ai_value)));
+    forced.push_back(zenz::MakeZenzTypoBatchJob(check_prefix, check_reading));
+    prepared.repeat_checks.push_back(std::move(check));
+  }
+  // Mozlumi (Build 60): unchanged segments whose word is also before them.
+  // Each check is two jobs with their own prefix: the segment and Zenz's own
+  // answer. The checks of both kinds are at most kAiRankMaxRepeatChecks.
+  std::vector<ZenzSameWordCheck> same_checks = FindZenzSameWordChecks(
+      assembled_context.left.prompt_context, prepared.parts,
+      kAiRankMaxRepeatChecks - prepared.repeat_checks.size());
+  prepared.same_checks.clear();
+  for (ZenzSameWordCheck& check : same_checks) {
+    ZenzPromptOptions check_options = prompt_options;
+    check_options.left_context = check.left_context;
+    check_options.right_context.clear();
+    std::string check_prefix = prompt_builder.Build("", check_options);
+    if (!absl::EndsWith(check_prefix, kOutputBegin)) {
+      return;
+    }
+    check_prefix.resize(check_prefix.size() - kOutputBegin.size());
+    const std::string check_reading = absl::StrCat(
+        prompt_builder.HiraganaToKatakana(check.key), kOutputBegin);
+    forced.push_back(zenz::MakeZenzTypoBatchJob(
+        check_prefix, absl::StrCat(check_reading, check.value)));
+    forced.push_back(zenz::MakeZenzTypoBatchJob(check_prefix, check_reading));
+    prepared.same_checks.push_back(std::move(check));
+  }
+  if (forced.empty()) {
+    return;
+  }
+  std::string batch_prompt = zenz::EncodeZenzTypoBatchPrompt(prefix, forced);
+  if ((!prepared.repeat_checks.empty() || !prepared.same_checks.empty()) &&
+      batch_prompt.size() > kAiRankMaxPromptBytes) {
+    // Without the checks, a repeated word could be promoted.
+    ZenzDebugOutput(absl::StrCat(
+        "[ai-rank] skipped reason=prompt_too_long repeat_checks=",
+        prepared.repeat_checks.size(),
+        " same_checks=", prepared.same_checks.size()));
+    return;
+  }
 
   ++zenz_live_generation_;
   ZenzLiveRequest request;
   request.generation = zenz_live_generation_;
   request.key = prepared.key;
-  request.prompt = zenz::EncodeZenzTypoBatchPrompt(prefix, forced);
+  request.prompt = std::move(batch_prompt);
   request.reading_katakana = prompt_builder.HiraganaToKatakana(prepared.key);
   request.left_context = assembled_context.left.prompt_context;
   request.pipe_name = config.zenz_live_correction_pipe_name();
@@ -8094,6 +8297,8 @@ void Session::MaybeScheduleAiRank(commands::Command* command) {
   ZenzDebugOutput(absl::StrCat(
       "[ai-rank] submit generation=", request.generation,
       " changed=", pending_ai_rank_.changed.size(),
+      " repeat_checks=", pending_ai_rank_.repeat_checks.size(),
+      " same_checks=", pending_ai_rank_.same_checks.size(),
       " context_reason=", assembled_context.left.reason,
       " context_source=",
       (zenz_context_from_recent_commit ? "recent_commit" : "app")));
@@ -8130,9 +8335,16 @@ bool Session::ApplyAiRank(commands::Command* command) {
   ClearAiRank();
 
   std::vector<zenz::ZenzTypoBatchResult> results;
+  const size_t repeat_checks = pending.repeat_checks.size();
+  const size_t same_checks = pending.same_checks.size();
+  // The two whole conversions are sent only when the AI changes a segment.
+  const bool has_whole = !pending.changed.empty();
+  const size_t repeat_base = has_whole ? 2 : 0;
+  const size_t same_base = repeat_base + 3 * repeat_checks;
   if (!response->ok || response->timeout ||
       !zenz::DecodeZenzTypoBatchResponse(response->value, &results) ||
-      results.size() != 2 || !results[0].ok || !results[1].ok) {
+      results.size() != same_base + 2 * same_checks ||
+      (has_whole && (!results[0].ok || !results[1].ok))) {
     ZenzDebugOutput(absl::StrCat(
         "[ai-rank] response not usable timeout=",
         ZenzBool(response->timeout), " reason=",
@@ -8143,25 +8355,181 @@ bool Session::ApplyAiRank(commands::Command* command) {
 
   // The whole sentence, including what Zenz would write after it: the
   // scores of the two conversions of the same reading and context.
-  const double mozc_score = results[0].forced_logprob + results[0].value_logprob;
-  const double ai_score = results[1].forced_logprob + results[1].value_logprob;
-  const double margin = ai_score - mozc_score;
-  const bool promote = margin >= kAiRankPromoteMargin;
+  const double margin =
+      has_whole ? (results[1].forced_logprob + results[1].value_logprob) -
+                      (results[0].forced_logprob + results[0].value_logprob)
+                : 0.0;
+  const double promote_margin = AiRankPromoteMargin(context_->GetConfig());
+  const bool promote = has_whole && margin >= promote_margin;
+  // Mozlumi: checked again here, right before the change: the AI does not
+  // replace a word the user chose (learned or user dictionary). The whole
+  // promotion is skipped, since the score was of the whole AI conversion.
+  const size_t user_kept =
+      context_->converter().CountUserChosenTopSegments(pending.changed);
+  // Mozlumi: a segment judged again (repeat check) takes the AI conversion or
+  // Zenz's own answer without the other word, whichever is better, only when
+  // it is better than the normal conversion by the margin; otherwise the
+  // normal conversion stays. The other changed segments are promoted.
+  const config::Config& rank_config = context_->GetConfig();
+  const auto total_logprob = [](const zenz::ZenzTypoBatchResult& result) {
+    return result.forced_logprob + result.value_logprob;
+  };
+  const auto round2 = [](double value) {
+    return static_cast<int>(value * 100) / 100.0;
+  };
+  // Zenz's own answer, checked like the AI candidates; empty when not usable.
+  const auto usable_answer = [&](absl::string_view key,
+                                 absl::string_view mozc_value,
+                                 absl::string_view left_context,
+                                 absl::string_view raw) -> std::string {
+    const ZenzContextPrefixDecision answer =
+        ZenzOutputValidator::ResolveLeftContextPrefix(raw, left_context,
+                                                      mozc_value);
+    if (!answer.safe || answer.value.empty()) {
+      return "";
+    }
+    if (answer.value == mozc_value) {
+      return answer.value;
+    }
+    ZenzValidationInput input;
+    input.key = std::string(key);
+    input.mozc_value = std::string(mozc_value);
+    input.zenz_value = answer.value;
+    input.left_context = std::string(left_context);
+    input.min_key_length = 0;
+    input.allow_synthetic_candidate = true;
+    input.allow_zenz_emoji_changes = rank_config.allow_zenz_emoji_changes();
+    return zenz_output_validator_.Validate(input).accept ? answer.value : "";
+  };
+  std::vector<size_t> repeat_kept_segments;
+  std::vector<engine::ExternalSegmentCandidate> repeat_own_answers;
+  std::string repeat_margins;
+  for (size_t c = 0; c < repeat_checks; ++c) {
+    const ZenzRepeatCheck& check = pending.repeat_checks[c];
+    const zenz::ZenzTypoBatchResult& mozc_check = results[repeat_base + 3 * c];
+    const zenz::ZenzTypoBatchResult& ai_check =
+        results[repeat_base + 3 * c + 1];
+    const zenz::ZenzTypoBatchResult& own_check =
+        results[repeat_base + 3 * c + 2];
+    if (!repeat_margins.empty()) {
+      absl::StrAppend(&repeat_margins, ",");
+    }
+    if (!mozc_check.ok) {
+      absl::StrAppend(&repeat_margins, "none");
+      repeat_kept_segments.push_back(check.segment_index);
+      continue;
+    }
+    ZenzRepeatCheckScores scores;
+    scores.mozc = total_logprob(mozc_check);
+    if (ai_check.ok) {
+      scores.ai = total_logprob(ai_check);
+    }
+    if (own_check.ok) {
+      std::string own_value = usable_answer(check.key, check.mozc_value,
+                                            check.left_context,
+                                            own_check.value);
+      if (!own_value.empty()) {
+        scores.local = total_logprob(own_check);
+        scores.local_value = std::move(own_value);
+      }
+    }
+    // "AI/own answer" minus the normal conversion; scores only.
+    absl::StrAppend(
+        &repeat_margins,
+        scores.ai.has_value() ? absl::StrCat(round2(*scores.ai - scores.mozc))
+                              : std::string("none"),
+        "/",
+        scores.local.has_value()
+            ? absl::StrCat(round2(*scores.local - scores.mozc))
+            : std::string("none"));
+    const std::string value =
+        ChooseZenzRepeatCheckValue(check, scores, promote_margin);
+    if (value.empty()) {
+      repeat_kept_segments.push_back(check.segment_index);
+    } else if (value != check.ai_value) {
+      repeat_own_answers.push_back({check.segment_index, check.key, value});
+    }
+  }
+  std::vector<engine::ExternalSegmentCandidate> to_promote;
+  for (const engine::ExternalSegmentCandidate& item : pending.changed) {
+    if (std::find(repeat_kept_segments.begin(), repeat_kept_segments.end(),
+                  item.segment_index) != repeat_kept_segments.end()) {
+      continue;
+    }
+    engine::ExternalSegmentCandidate promoted_item = item;
+    for (const engine::ExternalSegmentCandidate& own : repeat_own_answers) {
+      if (own.segment_index == item.segment_index) {
+        promoted_item.value = own.value;
+      }
+    }
+    to_promote.push_back(std::move(promoted_item));
+  }
+  // Mozlumi (Build 60): an unchanged segment judged again (same-word check)
+  // takes Zenz's own answer without the other word when the answer changes
+  // only that word and is better than the segment by the margin, unless the
+  // user chose the segment's word (learned or user dictionary).
+  std::vector<engine::ExternalSegmentCandidate> same_word_answers;
+  std::string same_margins;
+  for (size_t c = 0; c < same_checks; ++c) {
+    const ZenzSameWordCheck& check = pending.same_checks[c];
+    const zenz::ZenzTypoBatchResult& current_check = results[same_base + 2 * c];
+    const zenz::ZenzTypoBatchResult& own_check =
+        results[same_base + 2 * c + 1];
+    if (!same_margins.empty()) {
+      absl::StrAppend(&same_margins, ",");
+    }
+    if (!current_check.ok || !own_check.ok) {
+      absl::StrAppend(&same_margins, "none");
+      continue;
+    }
+    const std::string own_value = usable_answer(
+        check.key, check.value, check.left_context, own_check.value);
+    if (!IsZenzSameWordAnswer(check, own_value)) {
+      absl::StrAppend(&same_margins, "same");
+      continue;
+    }
+    const double check_margin =
+        total_logprob(own_check) - total_logprob(current_check);
+    absl::StrAppend(&same_margins, round2(check_margin));
+    const engine::ExternalSegmentCandidate answer = {check.segment_index,
+                                                     check.key, own_value};
+    if (check_margin >= promote_margin &&
+        context_->converter().CountUserChosenTopSegments({answer}) == 0) {
+      same_word_answers.push_back(answer);
+    }
+  }
+  if (!promote || user_kept > 0) {
+    to_promote.clear();
+  }
+  to_promote.insert(to_promote.end(), same_word_answers.begin(),
+                    same_word_answers.end());
   size_t promoted = 0;
-  if (promote && !context_->GetConfig().ai_candidate_first()) {
+  if (!to_promote.empty() && !rank_config.ai_candidate_first()) {
     promoted = context_->mutable_converter()->InsertExternalSegmentCandidates(
-        pending.changed, "AI", /*position=*/0);
+        to_promote, "AI", /*position=*/0);
     if (promoted > 0) {
       ai_candidate_badge_ = AiCandidateBadge::kApplied;
     }
   }
   // Scores only: the text is not logged.
   ZenzDebugOutput(absl::StrCat(
-      "[ai-rank] result margin=", static_cast<int>(margin * 100) / 100.0,
-      " threshold=", kAiRankPromoteMargin, " promote=", ZenzBool(promote),
-      " promoted=", promoted, " mozc_tail_chars=",
-      Util::CharsLen(results[0].value), " ai_tail_chars=",
-      Util::CharsLen(results[1].value)));
+      "[ai-rank] result margin=",
+      has_whole ? absl::StrCat(static_cast<int>(margin * 100) / 100.0)
+                : std::string("none"),
+      " threshold=", promote_margin, " promote=", ZenzBool(promote),
+      " promoted=", promoted, " user_kept=", user_kept,
+      " repeat_checks=", repeat_checks,
+      " repeat_kept=", repeat_kept_segments.size(),
+      " repeat_own=", repeat_own_answers.size(),
+      repeat_checks > 0 ? absl::StrCat(" repeat_margins=", repeat_margins)
+                        : std::string(),
+      " same_checks=", same_checks, " same_fixed=", same_word_answers.size(),
+      same_checks > 0 ? absl::StrCat(" same_margins=", same_margins)
+                      : std::string(),
+      " mozc_tail_chars=",
+      has_whole ? Util::CharsLen(results[0].value) : size_t{0},
+      " ai_tail_chars=",
+      has_whole ? Util::CharsLen(results[1].value) : size_t{0}));
   Output(command);
   return true;
 }
@@ -8235,16 +8603,64 @@ ZenzClientContextView Session::GetZenzContextView(
           commands::Context::PASSWORD) {
     return view;
   }
-  const absl::string_view recent =
-      recent_commit_context_.Get(Clock::GetAbslTime());
-  if (recent.empty()) {
+  recent_commit_snapshot_ = RecentCommitGet(Clock::GetAbslTime());
+  if (recent_commit_snapshot_.empty()) {
     return view;
   }
-  view.preceding_text = recent;
+  view.preceding_text = recent_commit_snapshot_;
   if (from_recent_commit != nullptr) {
     *from_recent_commit = true;
   }
   return view;
+}
+
+void Session::RecentCommitOnCommit(absl::string_view text, absl::Time now) {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.OnCommit(text, now);
+    return;
+  }
+  ZenzRecentCommitStore::Get()->OnCommit(zenz_context_app_, text, now);
+}
+
+void Session::RecentCommitOnLineBreak(absl::Time now) {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.OnLineBreak(now);
+    return;
+  }
+  ZenzRecentCommitStore::Get()->OnLineBreak(zenz_context_app_, now);
+}
+
+void Session::RecentCommitOnBackspace(absl::Time now) {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.OnBackspace(now);
+    return;
+  }
+  ZenzRecentCommitStore::Get()->OnBackspace(zenz_context_app_, now);
+}
+
+void Session::RecentCommitClear() {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.Clear();
+    return;
+  }
+  ZenzRecentCommitStore::Get()->Clear(zenz_context_app_);
+}
+
+std::string Session::RecentCommitGet(absl::Time now) const {
+  if (zenz_context_app_.empty()) {
+    return std::string(recent_commit_context_.Get(now));
+  }
+  return ZenzRecentCommitStore::Get()->GetContext(
+      zenz_context_app_, context_->GetConfig().zenz_context_across_apps(),
+      now);
+}
+
+const char* Session::RecentCommitScope() const {
+  if (zenz_context_app_.empty()) {
+    return "session";
+  }
+  return context_->GetConfig().zenz_context_across_apps() ? "across_apps"
+                                                          : "per_app";
 }
 
 void Session::UpdateRecentCommitContext(const commands::Command& command,
@@ -8252,13 +8668,13 @@ void Session::UpdateRecentCommitContext(const commands::Command& command,
                                         bool from_send_key) {
   if (context_->composer().GetInputFieldType() ==
       commands::Context::PASSWORD) {
-    recent_commit_context_.Clear();
+    RecentCommitClear();
     return;
   }
   const absl::Time now = Clock::GetAbslTime();
   const commands::Output& output = command.output();
   if (output.has_result() && !output.result().value().empty()) {
-    recent_commit_context_.OnCommit(output.result().value(), now);
+    RecentCommitOnCommit(output.result().value(), now);
   }
 
   // Below: a key that went to the application as it is.
@@ -8274,7 +8690,7 @@ void Session::UpdateRecentCommitContext(const commands::Command& command,
         modifier != commands::KeyEvent::RIGHT_SHIFT &&
         modifier != commands::KeyEvent::CAPS) {
       // A shortcut may change the text in unknown ways.
-      recent_commit_context_.Clear();
+      RecentCommitClear();
       return;
     }
   }
@@ -8282,27 +8698,27 @@ void Session::UpdateRecentCommitContext(const commands::Command& command,
     if (key.has_key_code() && key.key_code() >= 0x20 &&
         key.key_code() < 0x7f) {
       // A character typed directly (for example, in alphanumeric mode).
-      recent_commit_context_.OnCommit(
+      RecentCommitOnCommit(
           std::string(1, static_cast<char>(key.key_code())), now);
     }
     return;
   }
   switch (key.special_key()) {
     case commands::KeyEvent::ENTER:
-      recent_commit_context_.OnLineBreak(now);
+      RecentCommitOnLineBreak(now);
       break;
     case commands::KeyEvent::BACKSPACE:
-      recent_commit_context_.OnBackspace(now);
+      RecentCommitOnBackspace(now);
       break;
     case commands::KeyEvent::SPACE:
-      recent_commit_context_.OnCommit(" ", now);
+      RecentCommitOnCommit(" ", now);
       break;
     case commands::KeyEvent::ESCAPE:
       break;
     default:
       // Cursor movement, Delete, Tab and others: the text before the
       // cursor is no longer known.
-      recent_commit_context_.Clear();
+      RecentCommitClear();
       break;
   }
 }
@@ -10207,6 +10623,9 @@ bool Session::CommitInternal(commands::Command* command,
         (ImeContext::COMPOSITION | ImeContext::CONVERSION))) {
     return DoNothing(command);
   }
+  // Mozlumi: let the AI finish on this conversion first, so that the AI
+  // conversion can become the top candidate (Config.wait_ai_before_commit).
+  FinishAiWorkBeforeCommit();
   command->mutable_output()->set_consumed(true);
 
   PushUndoContext();

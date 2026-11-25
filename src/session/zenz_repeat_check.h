@@ -1,0 +1,120 @@
+// Copyright 2026
+// Licensed under the same terms as Mozc.
+
+#ifndef MOZC_SESSION_ZENZ_REPEAT_CHECK_H_
+#define MOZC_SESSION_ZENZ_REPEAT_CHECK_H_
+
+#include <cstddef>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "absl/strings/string_view.h"
+#include "absl/types/span.h"
+
+namespace mozc {
+namespace session {
+
+// Mozlumi: Zenz (zenz-v3.2-small) tends to make a word the same as a word of
+// the same reading before or after it: "同期してたら同期がした" for
+// "どうきしてたらどうきがした" (eval/zenz_cases_20261125c.tsv). When the AI
+// conversion changes a word into a word that is also in the sentence or in
+// the preceding text, the change is judged again without the other word: the
+// preceding text is cut after it, and the text after the segment is left out.
+// Then Zenz chose the right words, also for a sentence that really repeats a
+// word (eval/zenz_cases_20261125d.tsv, 2026-11-25).
+//
+// The normal conversion can be wrong too ("動機" for "どうき" where "動悸" is
+// right), so Zenz also writes its own answer without the other word, and the
+// best of the three is taken (Build 58).
+
+// One segment of the conversion compared by the AI rank, in order.
+struct ZenzRankPart {
+  // Index into the conversion segments (as ExternalSegmentCandidate).
+  size_t segment_index = 0;
+  std::string key;
+  std::string mozc_value;
+  std::string ai_value;
+  // True when the AI conversion changes this segment.
+  bool changed = false;
+};
+
+// A changed segment to judge again.
+struct ZenzRepeatCheck {
+  size_t segment_index = 0;
+  std::string key;
+  std::string mozc_value;
+  std::string ai_value;
+  // The text before the segment (the preceding text and the AI conversion
+  // before it), cut after the other word when it is there.
+  std::string left_context;
+};
+
+// The scores (log-probabilities; larger is better) of a check, with the same
+// prompt: the reading and the value, and what Zenz writes after it.
+struct ZenzRepeatCheckScores {
+  double mozc = 0.0;
+  // std::nullopt when the job failed.
+  std::optional<double> ai;
+  // Zenz's own answer; std::nullopt when the job failed or the answer is not
+  // usable.
+  std::optional<double> local;
+  std::string local_value;
+};
+
+// The value to put first for the checked segment: the AI conversion or Zenz's
+// own answer, whichever is better, when it is better than the normal
+// conversion by `margin`. Empty to keep the normal conversion.
+std::string ChooseZenzRepeatCheckValue(const ZenzRepeatCheck& check,
+                                       const ZenzRepeatCheckScores& scores,
+                                       double margin);
+
+// The part of `ai_value` that differs from `mozc_value`: the common beginning
+// and end (whole characters) are removed. "同期してたら" and "動悸してたら"
+// give "動悸".
+std::string ZenzChangedWord(absl::string_view mozc_value,
+                            absl::string_view ai_value);
+
+// The changed segments of `parts` whose new word (2 characters or more, with
+// kanji or katakana) is also in `left_context` or in the AI conversion of the
+// other parts. At most `max_checks`, from the beginning.
+std::vector<ZenzRepeatCheck> FindZenzRepeatChecks(
+    absl::string_view left_context, absl::Span<const ZenzRankPart> parts,
+    size_t max_checks);
+
+// Mozlumi (Build 60): Zenz and the normal conversion can also both copy a word
+// from the text before it, e.g. "高校の肛門" after "みと肛門クリニック". An
+// unchanged segment whose leading word (kanji, 2 characters or more) is also
+// in the text before it is judged again the same way: Zenz writes its own
+// answer without the other word, and the answer is put first when it changes
+// only that word and is better by the margin.
+struct ZenzSameWordCheck {
+  size_t segment_index = 0;
+  std::string key;
+  // The conversion of the segment (the normal conversion and the AI agree).
+  std::string value;
+  // The leading word of `value`, also found in the text before it.
+  std::string word;
+  // The text before the segment, cut after that word.
+  std::string left_context;
+};
+
+// The leading kanji and katakana of `value`: "肛門から" gives "肛門".
+std::string ZenzLeadingWord(absl::string_view value);
+
+// The unchanged segments of `parts` whose leading word (2 characters or more,
+// with kanji) is also in `left_context` or in the parts before it. At most
+// `max_checks`, from the beginning.
+std::vector<ZenzSameWordCheck> FindZenzSameWordChecks(
+    absl::string_view left_context, absl::Span<const ZenzRankPart> parts,
+    size_t max_checks);
+
+// True when `answer` changes only the leading word of the segment: it does not
+// begin with the word, and it keeps the rest ("校門から" for "肛門から").
+bool IsZenzSameWordAnswer(const ZenzSameWordCheck& check,
+                          absl::string_view answer);
+
+}  // namespace session
+}  // namespace mozc
+
+#endif  // MOZC_SESSION_ZENZ_REPEAT_CHECK_H_

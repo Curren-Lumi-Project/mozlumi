@@ -69,6 +69,42 @@ TEST(ZenzSegmentProjectionTest, ProjectsSingleSegmentRewrite) {
   EXPECT_TRUE(projection.segments[0].boundary_known);
 }
 
+TEST(ZenzSegmentProjectionTest, SplitsAdjacentChangedSegmentsAtKanaEndings) {
+  const std::vector<ZenzBaselineSegment> baseline = {
+      {"ふぁいるを", "ファイルを"},
+      {"どうきしてたら", "動悸してたら"},
+      {"どうきがしてきた", "動機がしてきた"}};
+
+  const ZenzSegmentProjection projection = ProjectZenzValueToMozcSegments(
+      baseline, "ふぁいるをどうきしてたらどうきがしてきた",
+      "ファイルを同期してたら動悸がしてきた");
+
+  ASSERT_TRUE(projection.success);
+  ASSERT_EQ(projection.segments.size(), 3);
+  EXPECT_FALSE(projection.segments[0].changed);
+  EXPECT_EQ(projection.segments[1].key, "どうきしてたら");
+  EXPECT_EQ(projection.segments[1].zenz_value, "同期してたら");
+  EXPECT_TRUE(projection.segments[1].changed);
+  EXPECT_TRUE(projection.segments[1].boundary_known);
+  EXPECT_EQ(projection.segments[2].key, "どうきがしてきた");
+  EXPECT_EQ(projection.segments[2].zenz_value, "動悸がしてきた");
+  EXPECT_TRUE(projection.segments[2].changed);
+  EXPECT_TRUE(projection.segments[2].boundary_known);
+}
+
+TEST(ZenzSegmentProjectionTest, KeepsAggregateWhenTheKanaEndingIsAmbiguous) {
+  // "を" is found twice in the Zenz value: the boundary is not guessed.
+  const std::vector<ZenzBaselineSegment> baseline = {
+      {"きかいを", "機会を"}, {"きかいをつかう", "奇怪を使う"}};
+
+  const ZenzSegmentProjection projection = ProjectZenzValueToMozcSegments(
+      baseline, "きかいをきかいをつかう", "機械を機械を使う");
+
+  ASSERT_TRUE(projection.success);
+  ASSERT_EQ(projection.segments.size(), 1);
+  EXPECT_FALSE(projection.segments[0].boundary_known);
+}
+
 TEST(ZenzSegmentProjectionTest,
      PreservesAmbiguousAdjacentChangedSegmentsAsUnresolvedAggregate) {
   const std::vector<ZenzBaselineSegment> baseline = {

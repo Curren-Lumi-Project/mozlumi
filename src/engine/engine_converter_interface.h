@@ -351,6 +351,15 @@ class EngineConverterInterface {
     return 0;
   }
 
+  // Mozlumi: counts the segments of |candidates| whose top candidate is the
+  // user's own choice: a word moved up by the user's learning (including the
+  // learned AI words) or a user dictionary word. The AI does not replace such
+  // a word by itself (ai_candidate_auto_first).
+  virtual size_t CountUserChosenTopSegments(
+      absl::Span<const ExternalSegmentCandidate> candidates) const {
+    return 0;
+  }
+
   // Fix the suggestion candidate.  True is returned if the selected
   // candidate is successfully committed.
   virtual bool CommitSuggestionByIndex(size_t index,

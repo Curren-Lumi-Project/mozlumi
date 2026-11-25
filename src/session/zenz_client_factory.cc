@@ -1,5 +1,6 @@
 #include "session/zenz_client_factory.h"
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -99,7 +100,18 @@ bool LaunchMacZenzScorer() {
 
 }  // namespace
 
+namespace {
+std::atomic<bool> g_zenz_client_disabled_for_test{false};
+}  // namespace
+
+void SetZenzClientDisabledForTest(bool disabled) {
+  g_zenz_client_disabled_for_test.store(disabled);
+}
+
 std::unique_ptr<ZenzClient> CreateZenzClient() {
+  if (g_zenz_client_disabled_for_test.load()) {
+    return nullptr;
+  }
 #if defined(__APPLE__) && TARGET_OS_OSX
   return std::make_unique<ZenzUnixSocketClient>(
       ::mozc::zenz::GetZenzUnixSocketPath(), &LaunchMacZenzScorer);
