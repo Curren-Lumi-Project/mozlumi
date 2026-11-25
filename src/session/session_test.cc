@@ -28,6 +28,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "session/session.h"
+#include "session/zenz_client_factory.h"
 #include "session/zenz_prompt_builder.h"
 
 #include <atomic>
@@ -736,6 +737,10 @@ TEST(ZenzOutputValidatorTest, RestoresWaveDashCodePointStyle) {
 class SessionTest : public testing::TestWithTempUserProfile {
  protected:
   void SetUp() override {
+    // Mozlumi: the AI conversion is on by default. Keep the tests away from
+    // the Zenz scorer of the installed Mozlumi: its answers would change the
+    // results (for example, when a commit waits for the AI).
+    SetZenzClientDisabledForTest(true);
     mobile_request_ = std::make_unique<Request>();
     request_test_util::FillMobileRequest(mobile_request_.get());
 
@@ -745,7 +750,7 @@ class SessionTest : public testing::TestWithTempUserProfile {
         dictionary::PosMatcher(mock_data_manager_.GetPosMatcherData()));
   }
 
-  void TearDown() override {}
+  void TearDown() override { SetZenzClientDisabledForTest(false); }
 
   void InsertCharacterChars(const absl::string_view chars, Session* session,
                             commands::Command* command) const {
