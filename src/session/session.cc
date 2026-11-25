@@ -66,6 +66,7 @@
 #include "session/zenz_client_factory.h"
 #include "session/zenz_context_assembler.h"
 #include "session/zenz_prompt_builder.h"
+#include "session/zenz_recent_commit_store.h"
 #include "session/zenz_text_privacy_analyzer.h"
 #include "session/zenz_typo_decision.h"
 #include "zenz/zenz_typo_batch.h"
@@ -2275,12 +2276,32 @@ bool Session::SendCommand(commands::Command* command) {
       result = ResumeCommandSequence(command);
       break;
     case commands::SessionCommand::FORGET_RECENT_COMMIT_CONTEXT:
-      // Mozlumi: sent by the client when the focus leaves this input. The
-      // recent commits belong to the previous field or window.
-      recent_commit_context_.Clear();
-      ZenzDebugOutput("[zenz] recent_commit cleared reason=focus_change");
+      // Mozlumi: sent by the client when the focus leaves this input. When
+      // the client told the application, the recent commits are kept by
+      // application (ZenzRecentCommitStore) and are used again when the user
+      // comes back. Otherwise they belong to the previous field or window.
+      if (zenz_context_app_.empty()) {
+        recent_commit_context_.Clear();
+        ZenzDebugOutput("[zenz] recent_commit cleared reason=focus_change");
+      } else {
+        ZenzDebugOutput(absl::StrCat(
+            "[zenz] recent_commit kept reason=focus_change scope=",
+            RecentCommitScope()));
+      }
       result = DoNothing(command);
       break;
+    case commands::SessionCommand::SET_ZENZ_CONTEXT_APP: {
+      // Mozlumi: the application of this input, sent by the client when the
+      // input is activated (macOS bundle identifier).
+      constexpr size_t kMaxZenzContextAppBytes = 256;
+      const std::string& app = command->input().command().text();
+      zenz_context_app_ =
+          app.size() <= kMaxZenzContextAppBytes ? app : std::string();
+      ZenzDebugOutput(absl::StrCat("[zenz] context app known=",
+                                   ZenzBool(!zenz_context_app_.empty())));
+      result = DoNothing(command);
+      break;
+    }
 
     case commands::SessionCommand::RECONVERT_SELECTION_OR_INSERT_SPACE:
       // This command is a client-side callback command.  It should normally be
@@ -7800,7 +7821,10 @@ void Session::MaybeScheduleAiCandidates(commands::Command* command) {
       ZenzRedactedTextStats("mozc_value", mozc_value),
       " segments=", pending_ai_candidates_.baseline_segments.size(),
       " context_reason=", assembled_context.left.reason,
-      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app")));
+      " context_source=", (zenz_context_from_recent_commit ? "recent_commit" : "app"),
+      " context_scope=",
+      (zenz_context_from_recent_commit ? RecentCommitScope() : "app"), " ",
+      ZenzRedactedTextStats("context", assembled_context.left.prompt_context)));
 
   EnsureZenzLiveCorrector()->Submit(std::move(request));
   AttachAiCandidatesPollCallback(command);
@@ -8007,8 +8031,10 @@ void Session::ClearTypoZenz() { pending_typo_zenz_ = PendingTypoZenz(); }
 
 // Mozlumi: how much more likely (natural log) the AI conversion has to be than
 // the normal conversion to become the top candidate. Tuned with the
-// "[ai-rank] result margin=" lines of zenz_debug.log.
-constexpr double kAiRankPromoteMargin = 2.0;
+// "[ai-rank] result margin=" lines of zenz_debug.log. 1.5 since 1.3.3: with
+// the preceding text, Zenz's correct answers were 1.5-2.2 better than the
+// normal conversion (eval/zenz_case_probe.py, 2026-11-25).
+constexpr double kAiRankPromoteMargin = 1.5;
 
 void Session::ClearAiRank() { pending_ai_rank_ = PendingAiRank(); }
 
@@ -8235,16 +8261,64 @@ ZenzClientContextView Session::GetZenzContextView(
           commands::Context::PASSWORD) {
     return view;
   }
-  const absl::string_view recent =
-      recent_commit_context_.Get(Clock::GetAbslTime());
-  if (recent.empty()) {
+  recent_commit_snapshot_ = RecentCommitGet(Clock::GetAbslTime());
+  if (recent_commit_snapshot_.empty()) {
     return view;
   }
-  view.preceding_text = recent;
+  view.preceding_text = recent_commit_snapshot_;
   if (from_recent_commit != nullptr) {
     *from_recent_commit = true;
   }
   return view;
+}
+
+void Session::RecentCommitOnCommit(absl::string_view text, absl::Time now) {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.OnCommit(text, now);
+    return;
+  }
+  ZenzRecentCommitStore::Get()->OnCommit(zenz_context_app_, text, now);
+}
+
+void Session::RecentCommitOnLineBreak(absl::Time now) {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.OnLineBreak(now);
+    return;
+  }
+  ZenzRecentCommitStore::Get()->OnLineBreak(zenz_context_app_, now);
+}
+
+void Session::RecentCommitOnBackspace(absl::Time now) {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.OnBackspace(now);
+    return;
+  }
+  ZenzRecentCommitStore::Get()->OnBackspace(zenz_context_app_, now);
+}
+
+void Session::RecentCommitClear() {
+  if (zenz_context_app_.empty()) {
+    recent_commit_context_.Clear();
+    return;
+  }
+  ZenzRecentCommitStore::Get()->Clear(zenz_context_app_);
+}
+
+std::string Session::RecentCommitGet(absl::Time now) const {
+  if (zenz_context_app_.empty()) {
+    return std::string(recent_commit_context_.Get(now));
+  }
+  return ZenzRecentCommitStore::Get()->GetContext(
+      zenz_context_app_, context_->GetConfig().zenz_context_across_apps(),
+      now);
+}
+
+const char* Session::RecentCommitScope() const {
+  if (zenz_context_app_.empty()) {
+    return "session";
+  }
+  return context_->GetConfig().zenz_context_across_apps() ? "across_apps"
+                                                          : "per_app";
 }
 
 void Session::UpdateRecentCommitContext(const commands::Command& command,
@@ -8252,13 +8326,13 @@ void Session::UpdateRecentCommitContext(const commands::Command& command,
                                         bool from_send_key) {
   if (context_->composer().GetInputFieldType() ==
       commands::Context::PASSWORD) {
-    recent_commit_context_.Clear();
+    RecentCommitClear();
     return;
   }
   const absl::Time now = Clock::GetAbslTime();
   const commands::Output& output = command.output();
   if (output.has_result() && !output.result().value().empty()) {
-    recent_commit_context_.OnCommit(output.result().value(), now);
+    RecentCommitOnCommit(output.result().value(), now);
   }
 
   // Below: a key that went to the application as it is.
@@ -8274,7 +8348,7 @@ void Session::UpdateRecentCommitContext(const commands::Command& command,
         modifier != commands::KeyEvent::RIGHT_SHIFT &&
         modifier != commands::KeyEvent::CAPS) {
       // A shortcut may change the text in unknown ways.
-      recent_commit_context_.Clear();
+      RecentCommitClear();
       return;
     }
   }
@@ -8282,27 +8356,27 @@ void Session::UpdateRecentCommitContext(const commands::Command& command,
     if (key.has_key_code() && key.key_code() >= 0x20 &&
         key.key_code() < 0x7f) {
       // A character typed directly (for example, in alphanumeric mode).
-      recent_commit_context_.OnCommit(
+      RecentCommitOnCommit(
           std::string(1, static_cast<char>(key.key_code())), now);
     }
     return;
   }
   switch (key.special_key()) {
     case commands::KeyEvent::ENTER:
-      recent_commit_context_.OnLineBreak(now);
+      RecentCommitOnLineBreak(now);
       break;
     case commands::KeyEvent::BACKSPACE:
-      recent_commit_context_.OnBackspace(now);
+      RecentCommitOnBackspace(now);
       break;
     case commands::KeyEvent::SPACE:
-      recent_commit_context_.OnCommit(" ", now);
+      RecentCommitOnCommit(" ", now);
       break;
     case commands::KeyEvent::ESCAPE:
       break;
     default:
       // Cursor movement, Delete, Tab and others: the text before the
       // cursor is no longer known.
-      recent_commit_context_.Clear();
+      RecentCommitClear();
       break;
   }
 }

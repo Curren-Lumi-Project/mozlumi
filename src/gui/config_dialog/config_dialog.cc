@@ -789,7 +789,7 @@ ConfigDialog::ConfigDialog()
   QLabel *ai_candidate_first_description_label = InsertDescriptionAfter(
       ai_candidate_first_checkbox_,
       QString::fromUtf8("オフのときは 2 番目の候補に入れて、"
-                        "「AI候補あり」と表示します。"));
+                        "バッジでお知らせします。"));
   // Mozlumi: the AI conversion becomes the top candidate only when Zenz finds
   // it clearly more likely (ai_candidate_auto_first).
   ai_candidate_auto_first_checkbox_ = new QCheckBox(
@@ -800,12 +800,34 @@ ConfigDialog::ConfigDialog()
       QStringLiteral("aiCandidateAutoFirstCheckBox"));
   InsertWidgetAfter(ai_candidate_first_description_label,
                     ai_candidate_auto_first_checkbox_);
-  InsertDescriptionAfter(
+  QLabel *ai_candidate_auto_first_description_label = InsertDescriptionAfter(
       ai_candidate_auto_first_checkbox_,
       QString::fromUtf8("前の文の流れをもとに、いつもの変換と AI の変換を"
                         " AI が採点し、AI の変換の点数がはっきり高いときだけ"
                         " 1 番目にします。判定が外れることもあります。"
                         "上の設定がオンのときは使いません。"));
+#ifdef __APPLE__
+  // Mozlumi: whether the text committed in other applications is also used
+  // as the AI context (zenz_context_across_apps). macOS only: the Windows
+  // client does not tell the application yet.
+  zenz_context_across_apps_checkbox_ = new QCheckBox(
+      QString::fromUtf8("アプリを切り替えても、直前に確定した文を"
+                        " AI の変換に使う"),
+      aiConversionCheckBox->parentWidget());
+  zenz_context_across_apps_checkbox_->setObjectName(
+      QStringLiteral("zenzContextAcrossAppsCheckBox"));
+  InsertWidgetAfter(ai_candidate_auto_first_description_label,
+                    zenz_context_across_apps_checkbox_);
+  InsertDescriptionAfter(
+      zenz_context_across_apps_checkbox_,
+      QString::fromUtf8("アプリが前の文を教えてくれないとき、AI は直前に確定した"
+                        "文を前の文として使います。オンにすると、別のアプリで"
+                        "確定した文も使います。オフのときは、同じアプリで確定した"
+                        "文だけを使います。どちらも文はメモリの中だけに置き、"
+                        "5 分入力がないと忘れます。"));
+#else   // __APPLE__
+  (void)ai_candidate_auto_first_description_label;
+#endif  // __APPLE__
 
 #if defined(__APPLE__) || defined(_WIN32)
   // Mozlumi: daily update check, under its own "Update" heading in the
@@ -6361,6 +6383,10 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
     ai_candidate_auto_first_checkbox_->setChecked(
         config.ai_candidate_auto_first());
   }
+  if (zenz_context_across_apps_checkbox_ != nullptr) {
+    zenz_context_across_apps_checkbox_->setChecked(
+        config.zenz_context_across_apps());
+  }
   SET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);
   // Invert only the UI: the persisted field remains an opt-in for emoji changes.
@@ -6769,6 +6795,10 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   if (ai_candidate_auto_first_checkbox_ != nullptr) {
     config->set_ai_candidate_auto_first(
         ai_candidate_auto_first_checkbox_->isChecked());
+  }
+  if (zenz_context_across_apps_checkbox_ != nullptr) {
+    config->set_zenz_context_across_apps(
+        zenz_context_across_apps_checkbox_->isChecked());
   }
   GET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);

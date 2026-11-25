@@ -433,6 +433,16 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   }
   [super activateServer:sender];
   [self setupClientBundle:sender];
+  // Mozlumi: tell the session which application this input belongs to, so
+  // that the text committed here is kept by application as the AI context
+  // (and is used again when the user comes back to this application).
+  if (mozcClient_ && !clientBundle_.empty()) {
+    SessionCommand appCommand;
+    appCommand.set_type(SessionCommand::SET_ZENZ_CONTEXT_APP);
+    appCommand.set_text(clientBundle_);
+    Output appOutput;
+    mozcClient_->SendCommand(appCommand, &appOutput);
+  }
   if (rendererCommand_.visible() && mozcRenderer_) {
     mozcRenderer_->ExecCommand(rendererCommand_);
   }

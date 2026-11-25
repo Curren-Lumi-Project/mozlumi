@@ -775,6 +775,12 @@ message Config {
   // the top candidate only when it is clearly more likely. Ignored when
   // ai_candidate_first is on.
   optional bool ai_candidate_auto_first = 5004 [default = true];
+  // Mozlumi: when the application does not report the text before the
+  // cursor, the AI uses the recently committed text as the preceding text.
+  // Off: only the text committed in the same application (kept while the
+  // user is in other applications). On: the text committed in any
+  // application. Memory only. macOS only (the client tells the application).
+  optional bool zenz_context_across_apps = 5005 [default = false];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;
