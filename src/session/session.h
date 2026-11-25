@@ -565,6 +565,10 @@ class Session {
     // two whole conversions, in this order.
     std::vector<ZenzRankPart> parts;
     std::vector<ZenzRepeatCheck> repeat_checks;
+    // Unchanged segments whose word is also before them (Build 60). Their two
+    // jobs (the segment, Zenz's own answer) follow the repeat checks. When
+    // nothing is changed, the two whole conversions are not sent.
+    std::vector<ZenzSameWordCheck> same_checks;
     absl::Time issued_at;
     uint32_t poll_count = 0;
   };

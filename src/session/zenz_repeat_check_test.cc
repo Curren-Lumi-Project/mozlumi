@@ -121,6 +121,49 @@ TEST(ZenzRepeatCheckTest, ChooseValue) {
   EXPECT_EQ(ChooseZenzRepeatCheckValue(check, scores, 1.5), "同期がしてきた");
 }
 
+TEST(ZenzRepeatCheckTest, LeadingWord) {
+  EXPECT_EQ(ZenzLeadingWord("肛門から"), "肛門");
+  EXPECT_EQ(ZenzLeadingWord("高校の"), "高校");
+  EXPECT_EQ(ZenzLeadingWord("クリニックの"), "クリニック");
+  EXPECT_EQ(ZenzLeadingWord("女子高生と"), "女子高生");
+  EXPECT_EQ(ZenzLeadingWord("のこと"), "");
+}
+
+TEST(ZenzRepeatCheckTest, SameWordBefore) {
+  // 2026-11-25 21:32: "高校の肛門" after "みと肛門クリニック"; the normal
+  // conversion and the AI agreed.
+  const std::vector<ZenzRankPart> parts = {
+      {0, "まえにある", "前にある", "前にある", false},
+      {1, "こうこうの", "高校の", "高校の", false},
+      {2, "こうもんから", "肛門から", "肛門から", false},
+  };
+  const std::vector<ZenzSameWordCheck> checks =
+      FindZenzSameWordChecks("水戸黄門がみと肛門クリニックの", parts, 3);
+  ASSERT_EQ(checks.size(), 1u);
+  EXPECT_EQ(checks[0].segment_index, 2u);
+  EXPECT_EQ(checks[0].key, "こうもんから");
+  EXPECT_EQ(checks[0].value, "肛門から");
+  EXPECT_EQ(checks[0].word, "肛門");
+  EXPECT_EQ(checks[0].left_context, "クリニックの前にある高校の");
+
+  EXPECT_TRUE(IsZenzSameWordAnswer(checks[0], "校門から"));
+  EXPECT_FALSE(IsZenzSameWordAnswer(checks[0], "肛門から"));
+  EXPECT_FALSE(IsZenzSameWordAnswer(checks[0], "肛門より"));
+  EXPECT_FALSE(IsZenzSameWordAnswer(checks[0], "校門"));
+  EXPECT_FALSE(IsZenzSameWordAnswer(checks[0], "から"));
+}
+
+TEST(ZenzRepeatCheckTest, NoSameWordCheck) {
+  const std::vector<ZenzRankPart> parts = {
+      {0, "いやほんの", "イヤホンの", "イヤホンの", false},
+      {1, "こうもんから", "肛門から", "肛門から", false},
+      {2, "どうきが", "動機が", "同期が", true},
+  };
+  // Katakana only, not before, or changed by the AI.
+  EXPECT_TRUE(
+      FindZenzSameWordChecks("イヤホンが届いた。同期した。", parts, 3).empty());
+}
+
 TEST(ZenzRepeatCheckTest, MaxChecks) {
   const std::vector<ZenzRankPart> parts = {
       {0, "どうきを", "動機を", "同期を", true},

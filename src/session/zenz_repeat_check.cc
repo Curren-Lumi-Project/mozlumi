@@ -110,5 +110,62 @@ std::vector<ZenzRepeatCheck> FindZenzRepeatChecks(
   return checks;
 }
 
+std::string ZenzLeadingWord(absl::string_view value) {
+  size_t end = 0;
+  while (end < value.size()) {
+    size_t next = end + 1;
+    while (IsUtf8Continuation(value, next)) {
+      ++next;
+    }
+    const Util::ScriptType type =
+        Util::GetScriptType(value.substr(end, next - end));
+    if (type != Util::KANJI && type != Util::KATAKANA) {
+      break;
+    }
+    end = next;
+  }
+  return std::string(value.substr(0, end));
+}
+
+std::vector<ZenzSameWordCheck> FindZenzSameWordChecks(
+    absl::string_view left_context, absl::Span<const ZenzRankPart> parts,
+    size_t max_checks) {
+  std::vector<ZenzSameWordCheck> checks;
+  std::string before(left_context);
+  for (size_t k = 0; k < parts.size() && checks.size() < max_checks; ++k) {
+    const ZenzRankPart& part = parts[k];
+    if (!part.changed && part.mozc_value == part.ai_value) {
+      const std::string word = ZenzLeadingWord(part.ai_value);
+      const size_t pos = Util::CharsLen(word) >= 2 &&
+                                 Util::ContainsScriptType(word, Util::KANJI)
+                             ? before.rfind(word)
+                             : std::string::npos;
+      if (pos != std::string::npos) {
+        ZenzSameWordCheck check;
+        check.segment_index = part.segment_index;
+        check.key = part.key;
+        check.value = part.ai_value;
+        check.word = word;
+        check.left_context = before.substr(pos + word.size());
+        checks.push_back(std::move(check));
+      }
+    }
+    before.append(part.ai_value);
+  }
+  return checks;
+}
+
+bool IsZenzSameWordAnswer(const ZenzSameWordCheck& check,
+                          absl::string_view answer) {
+  if (check.word.empty() || check.value.size() < check.word.size()) {
+    return false;
+  }
+  const absl::string_view rest =
+      absl::string_view(check.value).substr(check.word.size());
+  return answer.size() > rest.size() && answer != check.value &&
+         answer.substr(0, check.word.size()) != check.word &&
+         answer.substr(answer.size() - rest.size()) == rest;
+}
+
 }  // namespace session
 }  // namespace mozc
