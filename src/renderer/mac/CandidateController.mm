@@ -32,7 +32,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string>
 
+#include "absl/strings/str_cat.h"
 #include "base/coordinates.h"
 #include "protocol/commands.pb.h"
 #include "renderer/mac/CandidateController.h"
@@ -43,6 +45,7 @@
 #include "renderer/mac/RubyWindow.h"
 #include "renderer/mac/mac_candidate_interaction.h"
 #include "renderer/mac/mac_view_util.h"
+#include "renderer/candidate_position_log.h"
 #include "renderer/renderer_style_handler.h"
 #include "renderer/window_util.h"
 
@@ -64,6 +67,13 @@ const int kVerticalRubyGapAdjustment = 2; // pixel
 // OriginPointInCocoaCoord and RectInMozcCoord to convert the coordinate system.
 NSPoint OriginPointInCocoaCoord(const mozc::Rect &rect) {
   return NSMakePoint(rect.Left(), -rect.Bottom());
+}
+
+// Mozlumi (diagnostic): "(left,top,width,height)" for the candidate position
+// log.
+std::string FormatRectForLog(const mozc::Rect &rect) {
+  return absl::StrCat("(", rect.Left(), ",", rect.Top(), ",", rect.Width(),
+                      ",", rect.Height(), ")");
 }
 
 mozc::Rect RectInMozcCoord(const NSRect &rect) {
@@ -438,6 +448,23 @@ void CandidateController::AlignWindows() {
   candidate_rect_ = candidate_rect;
   has_candidate_rect_ = true;
   candidate_window_->MoveWindow(OriginPointInCocoaCoord(candidate_rect));
+
+  // Mozlumi (diagnostic): where the window was placed (Mozc coordinates: the
+  // Y-axis points down from the bottom of the base screen).
+  {
+    const RendererCommand::Rectangle &received = command_.preedit_rectangle();
+    const mozc::Size window_size = candidate_window_->GetWindowSize();
+    WriteCandidatePositionLog(absl::StrCat(
+        "renderer place received=(", received.left(), ",", received.top(), ",",
+        received.right(), ",", received.bottom(),
+        ") base_height=", GetBaseScreenHeight(),
+        " preedit=", FormatRectForLog(preedit_rect),
+        " display=", FormatRectForLog(display_rect), " window=(",
+        window_size.width, ",", window_size.height, ") zero=(",
+        candidate_zero_point.x, ",", candidate_zero_point.y,
+        ") placed=", FormatRectForLog(candidate_rect),
+        " vertical=", is_vertical ? 1 : 0));
+  }
 
   // Align infolist window. In vertical writing, keep the usage window on
   // the outside of the candidate/preedit pair so it cannot cover the active

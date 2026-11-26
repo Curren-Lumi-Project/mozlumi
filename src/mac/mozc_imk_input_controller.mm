@@ -53,6 +53,7 @@
 #include "mac/zenz_context_acquisition.h"
 
 #include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "base/const.h"
 #include "base/mac/mac_process.h"
@@ -64,6 +65,7 @@
 #include "protocol/candidate_window.pb.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
+#include "renderer/candidate_position_log.h"
 #include "renderer/renderer_client.h"
 
 using mozc::kProductNameInEnglish;
@@ -85,6 +87,12 @@ using SetOfString = std::set<std::string, std::less<>>;
 - (void)dispatchSessionCommand:(const SessionCommand *)command client:(id)sender;
 - (void)resetWritingDirection;
 - (void)updateWritingDirectionFromAttributes:(NSDictionary *)attributes;
+- (void)queryRendererRectangles:(RendererCommand *)command
+                         reason:(const char *)reason;
+- (void)cancelRendererPositionRecheck;
+- (void)scheduleRendererPositionRecheck;
+- (void)probeRendererPosition:(NSNumber *)delayMs;
+- (void)writeCandidatePositionLog:(absl::string_view)message;
 @end
 
 namespace {
@@ -282,6 +290,31 @@ bool IsRendererRectangleOnAnotherLine(
       std::max<int32_t>(1, (updated.bottom() - updated.top()) / 2);
   return std::abs(updated.top() - current.top()) >= half_line ||
          std::abs(updated.bottom() - current.bottom()) >= half_line;
+}
+
+// Mozlumi (diagnostic, Build 63): after the window is shown or updated, the
+// application is asked again at these times (milliseconds) only to write its
+// answer to the candidate position log.  The window is not moved by these.
+constexpr int kRendererPositionProbeDelaysMs[] = {600, 1500};
+
+// Mozlumi (diagnostic): "(left,top,right,bottom)" for the candidate position
+// log.
+std::string FormatRendererRectangle(const RendererCommand::Rectangle &rectangle) {
+  return absl::StrCat("(", rectangle.left(), ",", rectangle.top(), ",",
+                      rectangle.right(), ",", rectangle.bottom(), ")");
+}
+
+// Mozlumi (diagnostic): the number of characters of the composition, for the
+// candidate position log.  The text itself is not written.
+uint32_t GetPreeditCharCount(const Output &output) {
+  if (!output.has_preedit()) {
+    return 0;
+  }
+  uint32_t count = 0;
+  for (const Preedit::Segment &segment : output.preedit().segment()) {
+    count += segment.value_length();
+  }
+  return count;
 }
 
 NSUInteger CodePointOffsetToUtf16Offset(NSString *text, uint32_t code_point_offset) {
@@ -987,6 +1020,9 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
 - (void)clearCandidates {
   [self cancelRendererPositionRecheck];
+  if (rendererCommand_.visible()) {
+    [self writeCandidatePositionLog:"imk hide"];
+  }
   hasLiveConversionAnchorLeft_ = false;
   rendererCommand_.set_type(RendererCommand::UPDATE);
   rendererCommand_.set_visible(false);
@@ -1046,7 +1082,8 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 // Asks the client application where the composition is drawn, and stores the
 // answer in the preedit rectangles of |command|.  If the application throws,
 // the rectangles may be left as they were.
-- (void)queryRendererRectangles:(RendererCommand *)command {
+- (void)queryRendererRectangles:(RendererCommand *)command
+                         reason:(const char *)reason {
   NSRect preeditRect = NSZeroRect;
   const Output &output = command->output();
   const int32_t position = GetRendererAnchorPosition(output);
@@ -1076,6 +1113,16 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
         preeditRect, NSMakePoint(candidate_left, baseline.y),
         command->mutable_preedit_rectangle());
 
+    // Mozlumi (diagnostic): what the application answered.
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk ask reason=", reason, " app=", clientBundle_,
+        " index=", position,
+        " preedit_chars=", GetPreeditCharCount(output),
+        " line=(", preeditRect.origin.x, ",", preeditRect.origin.y, ",",
+        preeditRect.size.width, ",", preeditRect.size.height, ")",
+        " baseline=(", baseline.x, ",", baseline.y, ")",
+        " rect=", FormatRendererRectangle(command->preedit_rectangle()))];
+
     command->clear_ruby_preedit_rectangle();
 
     if (HasLiveConversionReading(output)) {
@@ -1103,13 +1150,29 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   } @catch (NSException *exception) {
     LOG(ERROR) << "Exception from [" << clientBundle_ << "] " << [[exception name] UTF8String]
                << "," << [[exception reason] UTF8String];
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk ask reason=", reason, " app=", clientBundle_, " failed")];
   }
+}
+
+// Mozlumi (diagnostic): writes |message| to the candidate position log.
+// Unit tests do not write it.
+- (void)writeCandidatePositionLog:(absl::string_view)message {
+  if (imkClientForTest_) {
+    return;
+  }
+  mozc::renderer::WriteCandidatePositionLog(message);
 }
 
 - (void)cancelRendererPositionRecheck {
   [NSObject cancelPreviousPerformRequestsWithTarget:self
                                            selector:@selector(recheckRendererPosition)
                                              object:nil];
+  for (const int delay_ms : kRendererPositionProbeDelaysMs) {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(probeRendererPosition:)
+                                               object:@(delay_ms)];
+  }
 }
 
 // Mozlumi: some applications (for example chat applications built on
@@ -1123,6 +1186,38 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   [self performSelector:@selector(recheckRendererPosition)
              withObject:nil
              afterDelay:kRendererPositionRecheckDelay];
+
+  // Mozlumi (diagnostic): unit tests count the questions to the application,
+  // so the questions only for the log are not asked there.
+  if (imkClientForTest_) {
+    return;
+  }
+  for (const int delay_ms : kRendererPositionProbeDelaysMs) {
+    [self performSelector:@selector(probeRendererPosition:)
+               withObject:@(delay_ms)
+               afterDelay:delay_ms / 1000.0];
+  }
+}
+
+// Mozlumi (diagnostic): asks the application again only to write its answer
+// to the candidate position log.  The window is not moved.
+- (void)probeRendererPosition:(NSNumber *)delayMs {
+  if (!mozcRenderer_ || !rendererCommand_.visible() ||
+      !rendererCommand_.has_output() ||
+      !rendererCommand_.has_preedit_rectangle()) {
+    return;
+  }
+
+  RendererCommand probed = rendererCommand_;
+  [self queryRendererRectangles:&probed reason:"probe"];
+  [self writeCandidatePositionLog:absl::StrCat(
+      "imk probe after_ms=", [delayMs intValue], " another_line=",
+      IsRendererRectangleOnAnotherLine(rendererCommand_.preedit_rectangle(),
+                                       probed.preedit_rectangle(),
+                                       verticalWriting_)
+          ? 1
+          : 0,
+      " shown=", FormatRendererRectangle(rendererCommand_.preedit_rectangle()))];
 }
 
 - (void)recheckRendererPosition {
@@ -1135,12 +1230,20 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   }
 
   RendererCommand rechecked = rendererCommand_;
-  [self queryRendererRectangles:&rechecked];
+  [self queryRendererRectangles:&rechecked reason:"recheck"];
   if (!IsRendererRectangleOnAnotherLine(rendererCommand_.preedit_rectangle(),
                                         rechecked.preedit_rectangle(),
                                         verticalWriting_)) {
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk recheck moved=0 shown=",
+        FormatRendererRectangle(rendererCommand_.preedit_rectangle()))];
     return;
   }
+
+  [self writeCandidatePositionLog:absl::StrCat(
+      "imk recheck moved=1 from=",
+      FormatRendererRectangle(rendererCommand_.preedit_rectangle()),
+      " to=", FormatRendererRectangle(rechecked.preedit_rectangle()))];
 
   DLOG(INFO) << "The composition moved to another line; moving the candidate window.";
   *rendererCommand_.mutable_preedit_rectangle() = rechecked.preedit_rectangle();
@@ -1162,6 +1265,9 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   if (!rendererCommand_.has_output() ||
       !ShouldDisplayRendererForOutput(rendererCommand_.output(),
                                       useConversionStatusIndicator_)) {
+    if (rendererCommand_.visible()) {
+      [self writeCandidatePositionLog:"imk hide"];
+    }
     hasLiveConversionAnchorLeft_ = false;
     rendererCommand_.set_visible(false);
     mozcRenderer_->ExecCommand(rendererCommand_);
@@ -1185,13 +1291,21 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   if (!ShouldRecalculateRendererPosition(rendererCommand_,
                                          useConversionStatusIndicator_)) {
     // Call ExecCommand anyway to update other information like candidate words.
+    // Mozlumi (diagnostic): the window stays where it is.
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk update keep app=", clientBundle_,
+        " index=", GetRendererAnchorPosition(rendererCommand_.output()),
+        " preedit_chars=", GetPreeditCharCount(rendererCommand_.output()),
+        " shown=", FormatRendererRectangle(rendererCommand_.preedit_rectangle()))];
     mozcRenderer_->ExecCommand(rendererCommand_);
     [self scheduleRendererPositionRecheck];
     return;
   }
 
+  const bool wasVisible = rendererCommand_.visible();
   rendererCommand_.set_visible(true);
-  [self queryRendererRectangles:&rendererCommand_];
+  [self queryRendererRectangles:&rendererCommand_
+                         reason:(wasVisible ? "update" : "show")];
   mozcRenderer_->ExecCommand(rendererCommand_);
   [self scheduleRendererPositionRecheck];
 }
