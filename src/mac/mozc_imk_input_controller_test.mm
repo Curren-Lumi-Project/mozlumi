@@ -637,6 +637,108 @@ TEST_F(MozcImkInputControllerTest, UpdateCandidates) {
   EXPECT_FALSE(rendererCommand.visible());
 }
 
+TEST_F(MozcImkInputControllerTest, RecheckMovesCandidateWindowToAnotherLine) {
+  commands::Output output;
+  commands::CandidateWindow *candidate_window = output.mutable_candidate_window();
+  candidate_window->set_focused_index(0);
+  candidate_window->set_size(1);
+  commands::CandidateWindow::Candidate *candidate = candidate_window->add_candidate();
+  candidate->set_index(0);
+  candidate->set_value("abc");
+
+  mock_client_.expectedCursor = NSMakeRect(50, 50, 1, 10);
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 718)]};
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 1);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 1);
+  const commands::RendererCommand &rendererCommand = controller_.rendererCommand;
+  EXPECT_EQ(rendererCommand.preedit_rectangle().top(), 708);
+
+  // The application reports the same place again: the window stays.
+  [controller_ recheckRendererPosition];
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 2);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 1);
+
+  // A move along the same line: the window stays.
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(80, 716)]};
+  [controller_ recheckRendererPosition];
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 1);
+  EXPECT_EQ(rendererCommand.preedit_rectangle().left(), 50);
+  EXPECT_EQ(rendererCommand.preedit_rectangle().top(), 708);
+
+  // The text field grew, and the composition is now on another line.
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 738)]};
+  [controller_ recheckRendererPosition];
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 2);
+  EXPECT_TRUE(mock_renderer_->CalledCommand().visible());
+  EXPECT_EQ(mock_renderer_->CalledCommand().preedit_rectangle().top(), 728);
+  EXPECT_EQ(rendererCommand.preedit_rectangle().left(), 50);
+  EXPECT_EQ(rendererCommand.preedit_rectangle().top(), 728);
+  EXPECT_EQ(rendererCommand.preedit_rectangle().right(), 51);
+  EXPECT_EQ(rendererCommand.preedit_rectangle().bottom(), 738);
+
+  // The application does not answer: the window stays.
+  mock_client_.expectedCursor = NSZeroRect;
+  mock_client_.expectedAttributes = @{};
+  [controller_ recheckRendererPosition];
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 2);
+  EXPECT_EQ(rendererCommand.preedit_rectangle().top(), 728);
+
+  // After the window is hidden, nothing is asked or shown.
+  [controller_ clearCandidates];
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 3);
+  const int asked =
+      [mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"];
+  [controller_ recheckRendererPosition];
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], asked);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 3);
+}
+
+TEST_F(MozcImkInputControllerTest, CandidateWindowFollowsCompositionShortlyAfterShown) {
+  commands::Output output;
+  commands::CandidateWindow *candidate_window = output.mutable_candidate_window();
+  candidate_window->set_focused_index(0);
+  candidate_window->set_size(1);
+  commands::CandidateWindow::Candidate *candidate = candidate_window->add_candidate();
+  candidate->set_index(0);
+  candidate->set_value("abc");
+
+  mock_client_.expectedCursor = NSMakeRect(50, 50, 1, 10);
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 718)]};
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 1);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 1);
+
+  // The application finishes moving the composition after the window is
+  // shown.  A moment later, the window follows it.
+  mock_client_.expectedAttributes =
+      @{@"IMKBaseline" : [NSValue valueWithPoint:NSMakePoint(50, 738)]};
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.4]];
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 2);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 2);
+  EXPECT_EQ(controller_.rendererCommand.preedit_rectangle().top(), 728);
+
+  // It asks only once.
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.4]];
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 2);
+
+  // When the window is hidden before the check, nothing is asked.
+  [controller_ updateCandidates:&output];
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 3);
+  [controller_ clearCandidates];
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 4);
+  [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.4]];
+  EXPECT_EQ([mock_client_ getCounter:"attributesForCharacterIndex:lineHeightRectangle:"], 2);
+  EXPECT_EQ(mock_renderer_->counter_ExecCommand(), 4);
+}
+
 TEST_F(MozcImkInputControllerTest,
        SuppressUnfocusedSuggestionOutsideLiveConversionOutput) {
   controller_.useLiveConversionForTest = true;

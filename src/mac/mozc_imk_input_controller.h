@@ -216,6 +216,11 @@
 /** Clears all candidate data in |candidates_|. */
 - (void)clearCandidates;
 
+/** Mozlumi: asks the client application again where the composition is, and
+ * moves the candidate window if the composition has moved to another line.
+ * Called a moment after the candidate window is shown or updated. */
+- (void)recheckRendererPosition;
+
 /** Opens a link specified by the URL.
  *
  * @param url The URL information.

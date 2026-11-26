@@ -256,6 +256,34 @@ void SetRendererRectangle(
   rectangle->set_bottom(baseline.y);
 }
 
+// Mozlumi: how long to wait before asking the application again where the
+// composition is, after the candidate window is shown or updated
+// (see recheckRendererPosition).
+constexpr NSTimeInterval kRendererPositionRecheckDelay = 0.2;
+
+// Mozlumi: returns true if |updated| is on another line than |current|.
+// Moves along the same line are ignored, so that the window does not move
+// back and forth in applications that report the caret instead of the
+// requested character.
+bool IsRendererRectangleOnAnotherLine(
+    const RendererCommand::Rectangle &current,
+    const RendererCommand::Rectangle &updated, bool vertical_writing) {
+  // The application did not answer.
+  if (updated.bottom() <= updated.top() ||
+      (updated.left() == 0 && updated.bottom() == 0)) {
+    return false;
+  }
+  if (vertical_writing) {
+    const int32_t half_line =
+        std::max<int32_t>(1, (updated.right() - updated.left()) / 2);
+    return std::abs(updated.left() - current.left()) >= half_line;
+  }
+  const int32_t half_line =
+      std::max<int32_t>(1, (updated.bottom() - updated.top()) / 2);
+  return std::abs(updated.top() - current.top()) >= half_line ||
+         std::abs(updated.bottom() - current.bottom()) >= half_line;
+}
+
 NSUInteger CodePointOffsetToUtf16Offset(NSString *text, uint32_t code_point_offset) {
   const NSUInteger length = [text length];
   NSUInteger utf16_offset = 0;
@@ -463,6 +491,9 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 }
 
 - (void)deactivateServer:(id)sender {
+  // Mozlumi: the candidate window is hidden below. Do not let a pending
+  // position check show it again.
+  [self cancelRendererPositionRecheck];
   if (imkClientForTest_) {
     return;
   }
@@ -955,6 +986,7 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
 
 - (void)clearCandidates {
+  [self cancelRendererPositionRecheck];
   hasLiveConversionAnchorLeft_ = false;
   rendererCommand_.set_type(RendererCommand::UPDATE);
   rendererCommand_.set_visible(false);
@@ -1011,43 +1043,12 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
       ->set_vertical_writing(verticalWriting_);
 }
 
-- (void)delayedUpdateCandidates {
-  if (!mozcRenderer_) {
-    return;
-  }
-
-  if (!rendererCommand_.has_output() ||
-      !ShouldDisplayRendererForOutput(rendererCommand_.output(),
-                                      useConversionStatusIndicator_)) {
-    hasLiveConversionAnchorLeft_ = false;
-    rendererCommand_.set_visible(false);
-    mozcRenderer_->ExecCommand(rendererCommand_);
-    return;
-  }
-
-  if (!HasLiveConversionReading(rendererCommand_.output())) {
-    hasLiveConversionAnchorLeft_ = false;
-  }
-
-  // The candidate window position is not recalculated if the
-  // candidate already appears on the screen.  Therefore, if a user
-  // moves client application window by mouse, candidate window won't
-  // follow the move of window.  This is done because:
-  //  - some applications like Emacs or Google Chrome don't return the
-  //    cursor position correctly.  The candidate window moves
-  //    frequently with those application, which irritates users.
-  //  - Kotoeri does this too.
-  if (!ShouldRecalculateRendererPosition(rendererCommand_,
-                                         useConversionStatusIndicator_)) {
-    // Call ExecCommand anyway to update other information like candidate words.
-    mozcRenderer_->ExecCommand(rendererCommand_);
-    return;
-  }
-
-  rendererCommand_.set_visible(true);
-
+// Asks the client application where the composition is drawn, and stores the
+// answer in the preedit rectangles of |command|.  If the application throws,
+// the rectangles may be left as they were.
+- (void)queryRendererRectangles:(RendererCommand *)command {
   NSRect preeditRect = NSZeroRect;
-  const Output &output = rendererCommand_.output();
+  const Output &output = command->output();
   const int32_t position = GetRendererAnchorPosition(output);
 
   // Some applications throw an exception from
@@ -1073,14 +1074,14 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
     SetRendererRectangle(
         preeditRect, NSMakePoint(candidate_left, baseline.y),
-        rendererCommand_.mutable_preedit_rectangle());
+        command->mutable_preedit_rectangle());
 
-    rendererCommand_.clear_ruby_preedit_rectangle();
+    command->clear_ruby_preedit_rectangle();
 
     if (HasLiveConversionReading(output)) {
       if (position == 0) {
-        rendererCommand_.mutable_ruby_preedit_rectangle()->CopyFrom(
-            rendererCommand_.preedit_rectangle());
+        command->mutable_ruby_preedit_rectangle()->CopyFrom(
+            command->preedit_rectangle());
       } else {
         // A passive suggestion may be anchored partway through the
         // composition. Ruby represents the reading of the entire preedit and
@@ -1095,7 +1096,7 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
         SetRendererRectangle(
             rubyPreeditRect, rubyBaseline,
-            rendererCommand_.mutable_ruby_preedit_rectangle());
+            command->mutable_ruby_preedit_rectangle());
       }
     }
 
@@ -1103,8 +1104,96 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
     LOG(ERROR) << "Exception from [" << clientBundle_ << "] " << [[exception name] UTF8String]
                << "," << [[exception reason] UTF8String];
   }
+}
 
+- (void)cancelRendererPositionRecheck {
+  [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                           selector:@selector(recheckRendererPosition)
+                                             object:nil];
+}
+
+// Mozlumi: some applications (for example chat applications built on
+// Chromium) report where the composition was before they finish moving it,
+// such as when the text field grows to two lines.  Then the candidate window
+// covers the text being typed.  A moment after the window is shown or
+// updated, ask the application again, and move the window if the
+// composition is now on another line.
+- (void)scheduleRendererPositionRecheck {
+  [self cancelRendererPositionRecheck];
+  [self performSelector:@selector(recheckRendererPosition)
+             withObject:nil
+             afterDelay:kRendererPositionRecheckDelay];
+}
+
+- (void)recheckRendererPosition {
+  if (!mozcRenderer_ || !rendererCommand_.visible() ||
+      !rendererCommand_.has_output() ||
+      !rendererCommand_.has_preedit_rectangle() ||
+      !ShouldDisplayRendererForOutput(rendererCommand_.output(),
+                                      useConversionStatusIndicator_)) {
+    return;
+  }
+
+  RendererCommand rechecked = rendererCommand_;
+  [self queryRendererRectangles:&rechecked];
+  if (!IsRendererRectangleOnAnotherLine(rendererCommand_.preedit_rectangle(),
+                                        rechecked.preedit_rectangle(),
+                                        verticalWriting_)) {
+    return;
+  }
+
+  DLOG(INFO) << "The composition moved to another line; moving the candidate window.";
+  *rendererCommand_.mutable_preedit_rectangle() = rechecked.preedit_rectangle();
+  if (rechecked.has_ruby_preedit_rectangle()) {
+    *rendererCommand_.mutable_ruby_preedit_rectangle() =
+        rechecked.ruby_preedit_rectangle();
+  } else {
+    rendererCommand_.clear_ruby_preedit_rectangle();
+  }
   mozcRenderer_->ExecCommand(rendererCommand_);
+}
+
+- (void)delayedUpdateCandidates {
+  [self cancelRendererPositionRecheck];
+  if (!mozcRenderer_) {
+    return;
+  }
+
+  if (!rendererCommand_.has_output() ||
+      !ShouldDisplayRendererForOutput(rendererCommand_.output(),
+                                      useConversionStatusIndicator_)) {
+    hasLiveConversionAnchorLeft_ = false;
+    rendererCommand_.set_visible(false);
+    mozcRenderer_->ExecCommand(rendererCommand_);
+    return;
+  }
+
+  if (!HasLiveConversionReading(rendererCommand_.output())) {
+    hasLiveConversionAnchorLeft_ = false;
+  }
+
+  // The candidate window position is not recalculated if the
+  // candidate already appears on the screen.  Therefore, if a user
+  // moves client application window by mouse, candidate window won't
+  // follow the move of window.  This is done because:
+  //  - some applications like Emacs or Google Chrome don't return the
+  //    cursor position correctly.  The candidate window moves
+  //    frequently with those application, which irritates users.
+  //  - Kotoeri does this too.
+  // Mozlumi: the window still follows the composition when it moves to
+  // another line (see recheckRendererPosition).
+  if (!ShouldRecalculateRendererPosition(rendererCommand_,
+                                         useConversionStatusIndicator_)) {
+    // Call ExecCommand anyway to update other information like candidate words.
+    mozcRenderer_->ExecCommand(rendererCommand_);
+    [self scheduleRendererPositionRecheck];
+    return;
+  }
+
+  rendererCommand_.set_visible(true);
+  [self queryRendererRectangles:&rendererCommand_];
+  mozcRenderer_->ExecCommand(rendererCommand_);
+  [self scheduleRendererPositionRecheck];
 }
 
 - (void)updateCandidates:(const Output *)output {
