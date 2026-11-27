@@ -19,9 +19,18 @@ namespace renderer {
 // window was placed to <logging directory>/candidate_position.log
 // (~/Library/Logs/Mozlumi on macOS).  Only coordinates, sizes, counts and the
 // application's bundle ID are written, never the typed text.
+//
+// 1.3.4: written only in the debug mode (Config::mozlumi_debug_log, off by
+// default).  Each process turns the log on or off with
+// SetCandidatePositionLogEnabled(): the input method from its config, the
+// renderer from the renderer command.
 
-// Appends "<local time with milliseconds> <message>\n" to the log.  Does
-// nothing outside macOS.
+// Turns the log on or off in this process.  Off at the start.
+void SetCandidatePositionLogEnabled(bool enabled);
+bool IsCandidatePositionLogEnabled();
+
+// Appends "<local time with milliseconds> <message>\n" to the log when the
+// log is on.  Does nothing outside macOS.
 void WriteCandidatePositionLog(absl::string_view message);
 
 // Appends the same line to |path|.  When |path| is already larger than

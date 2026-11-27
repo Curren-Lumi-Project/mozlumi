@@ -50,6 +50,8 @@
 
 #import "mac/KeyCodeMap.h"
 #import "mac/renderer_receiver.h"
+#include "mac/debug_log_export.h"
+#include "mac/mozlumi_debug_public_key.h"
 #include "mac/zenz_context_acquisition.h"
 
 #include "absl/log/log.h"
@@ -59,6 +61,7 @@
 #include "base/mac/mac_process.h"
 #include "base/mac/mac_util.h"
 #include "base/process.h"
+#include "base/system_util.h"
 #include "base/util.h"
 #include "client/client.h"
 #include "ipc/ipc.h"
@@ -315,6 +318,26 @@ uint32_t GetPreeditCharCount(const Output &output) {
     count += segment.value_length();
   }
   return count;
+}
+
+// Mozlumi (1.3.4): shows |message| in a dialog.  The input method has no
+// window of its own, so osascript shows it, as the updater does.  The message
+// is passed as an argument, not as a part of the script.
+void ShowMozlumiMessage(NSString *message) {
+  NSTask *task = [[NSTask alloc] init];
+  task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/osascript"];
+  task.arguments = @[
+    @"-e", @"on run argv",
+    @"-e",
+    @"display dialog (item 1 of argv) with title \"Mozlumi\" "
+    @"buttons {\"OK\"} default button \"OK\"",
+    @"-e", @"end run", message
+  ];
+  NSError *error = nil;
+  if (![task launchAndReturnError:&error]) {
+    LOG(ERROR) << "Failed to show a message: "
+               << error.localizedDescription.UTF8String;
+  }
 }
 
 NSUInteger CodePointOffsetToUtf16Offset(NSString *text, uint32_t code_point_offset) {
@@ -603,6 +626,10 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   useZenzContextAcquisition_ =
       (useLiveConversion_ && config.use_zenz_live_correction()) ||
       config.use_ai_conversion();
+  // Mozlumi (1.3.4): the candidate position log is written only in the debug
+  // mode.  The renderer is told in the renderer command.
+  mozc::renderer::SetCandidatePositionLogEnabled(config.mozlumi_debug_log());
+  rendererCommand_.set_mozlumi_debug_log(config.mozlumi_debug_log());
 
   if (config.use_japanese_layout()) {
     // Apple does not have "Japanese" layout actually -- here sets
@@ -1187,9 +1214,10 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
              withObject:nil
              afterDelay:kRendererPositionRecheckDelay];
 
-  // Mozlumi (diagnostic): unit tests count the questions to the application,
-  // so the questions only for the log are not asked there.
-  if (imkClientForTest_) {
+  // Mozlumi (diagnostic): the questions only for the log are asked in the
+  // debug mode (1.3.4).  Unit tests count the questions to the application,
+  // so they are not asked there.
+  if (imkClientForTest_ || !mozc::renderer::IsCandidatePositionLogEnabled()) {
     return;
   }
   for (const int delay_ms : kRendererPositionProbeDelaysMs) {
@@ -1686,6 +1714,81 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
     LOG(ERROR) << "Failed to launch the updater: "
                << error.localizedDescription.UTF8String;
   }
+}
+
+- (IBAction)exportDebugLogClicked:(id)sender {
+  // Mozlumi (1.3.4): the debug mode logs are encrypted for the developer and
+  // saved on the Desktop.  The user sends the file by hand (by mail or DM);
+  // the input method itself never accesses the network.
+  NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
+  NSString *version = [info[@"CFBundleShortVersionString"] description];
+  NSString *build = [info[@"MozlumiBuild"] description];
+  if (version == nil) {
+    version = @"unknown";
+  }
+  if (build == nil) {
+    build = @"unknown";
+  }
+  const std::string header = absl::StrCat(
+      "version: ", version.UTF8String, " build ", build.UTF8String, "\n",
+      "macos: ",
+      [[NSProcessInfo processInfo] operatingSystemVersionString].UTF8String,
+      "\n", "debug_mode: ",
+      mozc::renderer::IsCandidatePositionLogEnabled() ? "on" : "off", "\n",
+      "exported: ", [[NSDate date] description].UTF8String, "\n");
+
+  std::string bundle;
+  if (!mozc::mac::BuildDebugLogBundle(mozc::SystemUtil::GetLoggingDirectory(),
+                                      header, &bundle)) {
+    ShowMozlumiMessage(
+        @"書き出す不具合の記録がありません。\n\n"
+        @"環境設定の「プライバシー」で「不具合を調べるための記録を残す"
+        @"（デバッグモード）」をオンにして、不具合が起きたあとに、"
+        @"もう一度書き出してください。");
+    return;
+  }
+
+  std::string file_content;
+  if (!mozc::mac::EncryptDebugLogBundle(mozc::mac::kMozlumiDebugPublicKey,
+                                        bundle, &file_content)) {
+    LOG(ERROR) << "Failed to encrypt the debug log";
+    ShowMozlumiMessage(@"不具合の記録を暗号化できませんでした。");
+    return;
+  }
+
+  NSURL *desktop = [[NSFileManager defaultManager]
+                       URLsForDirectory:NSDesktopDirectory
+                              inDomains:NSUserDomainMask]
+                       .firstObject;
+  if (desktop == nil) {
+    ShowMozlumiMessage(@"デスクトップのフォルダが見つかりませんでした。");
+    return;
+  }
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+  formatter.dateFormat = @"yyyyMMdd_HHmmss";
+  NSString *name =
+      [NSString stringWithFormat:@"Mozlumi_debug_log_%@.mozlumilog",
+                                 [formatter stringFromDate:[NSDate date]]];
+  NSURL *url = [desktop URLByAppendingPathComponent:name];
+  NSData *data = [NSData dataWithBytes:file_content.data()
+                                length:file_content.size()];
+  NSError *error = nil;
+  if (![data writeToURL:url options:NSDataWritingAtomic error:&error]) {
+    LOG(ERROR) << "Failed to save the debug log: "
+               << error.localizedDescription.UTF8String;
+    ShowMozlumiMessage(@"不具合の記録をデスクトップに保存できませんでした。");
+    return;
+  }
+  [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ url ]];
+  ShowMozlumiMessage([NSString
+      stringWithFormat:
+          @"不具合の記録を、開発者だけが読める形に暗号化して、"
+          @"デスクトップに保存しました。\n\n%@\n\n"
+          @"このファイルを、メールや DM で開発者に送ってください。"
+          @"入力した文字そのものは入っていません"
+          @"（使ったアプリの名前は入っています）。",
+          name]);
 }
 
 + (void)setGlobalRendererReceiver:(RendererReceiver *)rendererReceiver {

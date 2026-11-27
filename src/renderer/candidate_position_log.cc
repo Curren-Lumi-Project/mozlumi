@@ -3,6 +3,7 @@
 
 #include "renderer/candidate_position_log.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -23,7 +24,17 @@ namespace {
 
 constexpr int64_t kMaxCandidatePositionLogBytes = 1 << 20;
 
+std::atomic<bool> g_candidate_position_log_enabled{false};
+
 }  // namespace
+
+void SetCandidatePositionLogEnabled(bool enabled) {
+  g_candidate_position_log_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool IsCandidatePositionLogEnabled() {
+  return g_candidate_position_log_enabled.load(std::memory_order_relaxed);
+}
 
 void WriteCandidatePositionLogToFile(const std::string &path,
                                      absl::string_view message,
@@ -54,6 +65,9 @@ void WriteCandidatePositionLogToFile(const std::string &path,
 }
 
 void WriteCandidatePositionLog(absl::string_view message) {
+  if (!IsCandidatePositionLogEnabled()) {
+    return;
+  }
 #if defined(__APPLE__)
   const std::string dir = SystemUtil::GetLoggingDirectory();
   if (dir.empty()) {

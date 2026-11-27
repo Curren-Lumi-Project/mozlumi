@@ -32,6 +32,7 @@
 #include "session/session.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -123,6 +124,11 @@ void MozcLeftContextDebugOutput(absl::string_view message) {
 }
 #endif  // defined(_WIN32) && defined(MOZC_LEFT_CONTEXT_DEBUG)
 
+// Mozlumi (1.3.4): zenz_debug.log is written only in the debug mode
+// (Config::mozlumi_debug_log, off by default). Session::SetConfig() sets this
+// from the config of the sessions.
+std::atomic<bool> g_zenz_debug_log_enabled{false};
+
 #if defined(_WIN32)
 std::wstring Utf8ToWideForZenzDebug(absl::string_view s) {
   if (s.empty()) {
@@ -152,6 +158,9 @@ void ZenzDebugOutput(absl::string_view message) {
 // and context classes (text is reduced to byte/char counts), so the typed
 // text itself is never written. The file is rotated at 1 MiB.
 void ZenzDebugOutput(absl::string_view message) {
+  if (!g_zenz_debug_log_enabled.load(std::memory_order_relaxed)) {
+    return;
+  }
   constexpr std::streamoff kMaxZenzDebugLogBytes = 1 << 20;
   static std::mutex* const mutex = new std::mutex();
   std::lock_guard<std::mutex> lock(*mutex);
@@ -3805,6 +3814,8 @@ void Session::SetTable(std::shared_ptr<const composer::Table> table) {
 
 void Session::SetConfig(std::shared_ptr<const config::Config> config) {
   DCHECK(config);
+  g_zenz_debug_log_enabled.store(config->mozlumi_debug_log(),
+                                 std::memory_order_relaxed);
   ClearUndoContext();
   context_->SetConfig(std::move(config));
 }

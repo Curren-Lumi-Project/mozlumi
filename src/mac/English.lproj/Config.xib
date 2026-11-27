@@ -36,6 +36,11 @@
                         <action selector="dictionaryToolClicked:" target="-2" id="20"/>
                     </connections>
                 </menuItem>
+                <menuItem title="Export Debug Log..." id="36">
+                    <connections>
+                        <action selector="exportDebugLogClicked:" target="-2" id="37"/>
+                    </connections>
+                </menuItem>
                 <menuItem title="Check for Updates..." id="34">
                     <connections>
                         <action selector="checkForUpdatesClicked:" target="-2" id="35"/>

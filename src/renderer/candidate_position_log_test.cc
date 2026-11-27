@@ -64,6 +64,14 @@ TEST(CandidatePositionLogTest, MovesALargeLogAside) {
   EXPECT_EQ(old_lines[0].substr(kTimeLength), std::string(100, 'a'));
 }
 
+TEST(CandidatePositionLogTest, IsOffUntilTurnedOn) {
+  EXPECT_FALSE(IsCandidatePositionLogEnabled());
+  SetCandidatePositionLogEnabled(true);
+  EXPECT_TRUE(IsCandidatePositionLogEnabled());
+  SetCandidatePositionLogEnabled(false);
+  EXPECT_FALSE(IsCandidatePositionLogEnabled());
+}
+
 }  // namespace
 }  // namespace renderer
 }  // namespace mozc

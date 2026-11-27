@@ -74,6 +74,11 @@ message RendererCommand {
   // CandidateWindow::position from shifting the full-reading ruby overlay.
   optional Rectangle ruby_preedit_rectangle = 1001;
 
+  // Mozlumi macOS extension (1.3.4): Config::mozlumi_debug_log, so that the
+  // renderer writes where it places the candidate window only in the debug
+  // mode. Not set in the commands that only hide the windows.
+  optional bool mozlumi_debug_log = 1002;
+
   // An equivalent to IMECHARPOSITION in IMM32. (For Windows only)
   // TODO(yukawa): make a common candidate form format for all platforms.
   message CharacterPosition {

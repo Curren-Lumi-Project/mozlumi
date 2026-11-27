@@ -905,6 +905,55 @@ ConfigDialog::ConfigDialog()
   updateCheckGroup->hide();
 #endif  // __APPLE__ || _WIN32
 
+#ifdef __APPLE__
+  // Mozlumi (1.3.4): the debug mode (mozlumi_debug_log), under its own
+  // heading after "Update" in the Privacy tab. macOS only: the logs and the
+  // export are made only by the macOS input method.
+  {
+    QWidget *tab = updateCheckGroup->parentWidget();
+    auto *header = new QFrame(tab);
+    header->setObjectName(QStringLiteral("mozlumiDebugLogHeader"));
+    header->setFrameShape(QFrame::NoFrame);
+    auto *header_layout = new QHBoxLayout(header);
+    header_layout->setContentsMargins(9, 9, 9, 9);
+    header_layout->setSpacing(6);
+    auto *header_label = new QLabel(QString::fromUtf8("不具合の調査"), header);
+    header_label->setObjectName(QStringLiteral("mozlumiDebugLogHeaderLabel"));
+    header_label->setFont(updateCheckHeaderLabel->font());
+    header_layout->addWidget(header_label);
+    auto *header_line = new QFrame(header);
+    header_line->setFrameShape(QFrame::HLine);
+    header_line->setFrameShadow(QFrame::Sunken);
+    header_line->setSizePolicy(QSizePolicy::MinimumExpanding,
+                               QSizePolicy::Fixed);
+    header_layout->addWidget(header_line);
+    InsertWidgetAfter(updateCheckGroup, header);
+
+    auto *group = new QFrame(tab);
+    group->setObjectName(QStringLiteral("mozlumiDebugLogGroup"));
+    group->setFrameShape(QFrame::NoFrame);
+    auto *group_layout = new QVBoxLayout(group);
+    group_layout->setContentsMargins(24, 9, 24, 9);
+    group_layout->setSpacing(6);
+    mozlumi_debug_log_checkbox_ = new QCheckBox(
+        QString::fromUtf8("不具合を調べるための記録を残す（デバッグモード）"),
+        group);
+    mozlumi_debug_log_checkbox_->setObjectName(
+        QStringLiteral("mozlumiDebugLogCheckBox"));
+    group_layout->addWidget(mozlumi_debug_log_checkbox_);
+    InsertWidgetAfter(header, group);
+    InsertDescriptionAfter(
+        mozlumi_debug_log_checkbox_,
+        QString::fromUtf8(
+            "オンにすると、変換候補の枠の位置や AI の判定の記録を、この Mac の"
+            "中（~/Library/Logs/Mozlumi）に残します。入力した文字そのものは"
+            "残しません（使ったアプリの名前は残ります）。不具合が起きたら、"
+            "入力メニューの「不具合の記録を書き出す...」で、開発者だけが"
+            "読める形に暗号化して書き出せます。ふだんはオフのままで"
+            "大丈夫です。"));
+  }
+#endif  // __APPLE__
+
   // Event handlers to update 'Apply' button state.
   Connect(findChildren<QCheckBox *>(), SIGNAL(stateChanged(int)), this,
           SLOT(EnableApplyButton()));
@@ -6466,6 +6515,9 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
     wait_ai_before_commit_checkbox_->setChecked(
         config.wait_ai_before_commit());
   }
+  if (mozlumi_debug_log_checkbox_ != nullptr) {
+    mozlumi_debug_log_checkbox_->setChecked(config.mozlumi_debug_log());
+  }
   SET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);
   // Invert only the UI: the persisted field remains an opt-in for emoji changes.
@@ -6890,6 +6942,9 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
   if (wait_ai_before_commit_checkbox_ != nullptr) {
     config->set_wait_ai_before_commit(
         wait_ai_before_commit_checkbox_->isChecked());
+  }
+  if (mozlumi_debug_log_checkbox_ != nullptr) {
+    config->set_mozlumi_debug_log(mozlumi_debug_log_checkbox_->isChecked());
   }
   GET_CHECKBOX(zenzStrictReadingPreservationCheckBox,
                use_zenz_strict_reading_preservation);

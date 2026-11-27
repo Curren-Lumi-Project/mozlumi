@@ -175,6 +175,12 @@ bool CandidateController::ExecCommand(const RendererCommand &command) {
   if (command.type() != RendererCommand::UPDATE) {
     return false;
   }
+  // Mozlumi (1.3.4): the candidate position log is written only in the debug
+  // mode, which the input method tells in the command.  The commands that only
+  // hide the windows do not carry it.
+  if (command.has_mozlumi_debug_log()) {
+    SetCandidatePositionLogEnabled(command.mozlumi_debug_log());
+  }
   command_.CopyFrom(command);
   // Resolve the host writing direction before any candidate window performs
   // layout, then propagate that exact snapshot to both candidate windows.

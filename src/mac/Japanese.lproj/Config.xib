@@ -36,6 +36,11 @@
                         <action selector="dictionaryToolClicked:" target="-2" id="20"/>
                     </connections>
                 </menuItem>
+                <menuItem title="不具合の記録を書き出す..." id="36">
+                    <connections>
+                        <action selector="exportDebugLogClicked:" target="-2" id="37"/>
+                    </connections>
+                </menuItem>
                 <menuItem title="アップデートを確認..." id="34">
                     <connections>
                         <action selector="checkForUpdatesClicked:" target="-2" id="35"/>
