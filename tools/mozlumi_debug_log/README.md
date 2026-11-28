@@ -11,3 +11,5 @@ Mozlumi 1.3.4 から、Mac 版の環境設定の「プライバシー」に「�
 - 鍵を作る（最初の 1 回だけ）: `swift keygen.swift <秘密鍵のファイル> src/mac/mozlumi_debug_public_key.h`
   - 秘密鍵はリポジトリに入れない。バックアップを取っておく（なくすと、書き出された記録を読めない）
 - 読む: `swift decrypt.swift <秘密鍵のファイル> <ファイル.mozlumilog> <出力.txt>`
+- 読むアプリを作る（最初の 1 回と、decrypt.swift を変えたとき）: `zsh make_reader_app.zsh [テキストを置くフォルダ]`
+  - `~/Applications/Mozlumiの記録を読む.app` ができる。`.mozlumilog` をダブルクリック（またはアプリにドラッグ）すると、テキストにする（初期値は `/Volumes/San1T/Mozlumi/debug-logs`。ないときはファイルの隣）
