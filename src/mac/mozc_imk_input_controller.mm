@@ -50,20 +50,25 @@
 
 #import "mac/KeyCodeMap.h"
 #import "mac/renderer_receiver.h"
+#include "mac/debug_log_export.h"
+#include "mac/mozlumi_debug_public_key.h"
 #include "mac/zenz_context_acquisition.h"
 
 #include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "base/const.h"
 #include "base/mac/mac_process.h"
 #include "base/mac/mac_util.h"
 #include "base/process.h"
+#include "base/system_util.h"
 #include "base/util.h"
 #include "client/client.h"
 #include "ipc/ipc.h"
 #include "protocol/candidate_window.pb.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
+#include "renderer/candidate_position_log.h"
 #include "renderer/renderer_client.h"
 
 using mozc::kProductNameInEnglish;
@@ -85,6 +90,12 @@ using SetOfString = std::set<std::string, std::less<>>;
 - (void)dispatchSessionCommand:(const SessionCommand *)command client:(id)sender;
 - (void)resetWritingDirection;
 - (void)updateWritingDirectionFromAttributes:(NSDictionary *)attributes;
+- (void)queryRendererRectangles:(RendererCommand *)command
+                         reason:(const char *)reason;
+- (void)cancelRendererPositionRecheck;
+- (void)scheduleRendererPositionRecheck;
+- (void)probeRendererPosition:(NSNumber *)delayMs;
+- (void)writeCandidatePositionLog:(absl::string_view)message;
 @end
 
 namespace {
@@ -254,6 +265,213 @@ void SetRendererRectangle(
   rectangle->set_right(baseline.x + right_offset);
   rectangle->set_top(baseline.y + top_offset);
   rectangle->set_bottom(baseline.y);
+}
+
+// Mozlumi: how long to wait before asking the application again where the
+// composition is, after the candidate window is shown or updated
+// (see recheckRendererPosition).
+constexpr NSTimeInterval kRendererPositionRecheckDelay = 0.2;
+
+// Mozlumi: returns true if |updated| is on another line than |current|.
+// Moves along the same line are ignored, so that the window does not move
+// back and forth in applications that report the caret instead of the
+// requested character.
+bool IsRendererRectangleOnAnotherLine(
+    const RendererCommand::Rectangle &current,
+    const RendererCommand::Rectangle &updated, bool vertical_writing) {
+  // The application did not answer.
+  if (updated.bottom() <= updated.top() ||
+      (updated.left() == 0 && updated.bottom() == 0)) {
+    return false;
+  }
+  if (vertical_writing) {
+    const int32_t half_line =
+        std::max<int32_t>(1, (updated.right() - updated.left()) / 2);
+    return std::abs(updated.left() - current.left()) >= half_line;
+  }
+  const int32_t half_line =
+      std::max<int32_t>(1, (updated.bottom() - updated.top()) / 2);
+  return std::abs(updated.top() - current.top()) >= half_line ||
+         std::abs(updated.bottom() - current.bottom()) >= half_line;
+}
+
+// Mozlumi (diagnostic, Build 63): after the window is shown or updated, the
+// application is asked again at these times (milliseconds) only to write its
+// answer to the candidate position log.  The window is not moved by these.
+constexpr int kRendererPositionProbeDelaysMs[] = {600, 1500};
+
+// Mozlumi (diagnostic): "(left,top,right,bottom)" for the candidate position
+// log.
+std::string FormatRendererRectangle(const RendererCommand::Rectangle &rectangle) {
+  return absl::StrCat("(", rectangle.left(), ",", rectangle.top(), ",",
+                      rectangle.right(), ",", rectangle.bottom(), ")");
+}
+
+// Mozlumi (diagnostic): the number of characters of the composition, for the
+// candidate position log.  The text itself is not written.
+uint32_t GetPreeditCharCount(const Output &output) {
+  if (!output.has_preedit()) {
+    return 0;
+  }
+  uint32_t count = 0;
+  for (const Preedit::Segment &segment : output.preedit().segment()) {
+    count += segment.value_length();
+  }
+  return count;
+}
+
+// Mozlumi (1.3.4): shows |message| in a dialog.  The input method has no
+// window of its own, so osascript shows it, as the updater does.  The message
+// is passed as an argument, not as a part of the script.
+void ShowMozlumiMessage(NSString *message) {
+  NSTask *task = [[NSTask alloc] init];
+  task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/osascript"];
+  task.arguments = @[
+    @"-e", @"on run argv",
+    @"-e",
+    @"display dialog (item 1 of argv) with title \"Mozlumi\" "
+    @"buttons {\"OK\"} default button \"OK\"",
+    @"-e", @"end run", message
+  ];
+  NSError *error = nil;
+  if (![task launchAndReturnError:&error]) {
+    LOG(ERROR) << "Failed to show a message: "
+               << error.localizedDescription.UTF8String;
+  }
+}
+
+// Mozlumi (1.3.4): shows |message| with |buttons| (the last one is the
+// default) and calls |handler| on the main queue with the number of the
+// pressed button (1 for the first one), or 0 when the dialog could not be
+// shown.  osascript runs in its own process, so the input method is not
+// blocked while the dialog is open.  The button is returned as a number: text
+// returned by osascript started from the input method can come back in
+// another encoding (Build 65: 「メールで送る」 did not match).
+void AskMozlumiQuestion(NSString *message, NSArray<NSString *> *buttons,
+                        void (^handler)(NSInteger button)) {
+  NSTask *task = [[NSTask alloc] init];
+  task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/osascript"];
+  // argv: item 1 is the message, the rest are the buttons.
+  NSMutableArray<NSString *> *arguments = [NSMutableArray arrayWithArray:@[
+    @"-e", @"on run argv",
+    @"-e", @"set theButtons to items 2 thru -1 of argv",
+    @"-e",
+    @"set theResult to display dialog (item 1 of argv) with title \"Mozlumi\" "
+    @"buttons theButtons default button (count of theButtons)",
+    @"-e", @"set thePressed to button returned of theResult",
+    @"-e", @"repeat with i from 1 to count of theButtons",
+    @"-e", @"if item i of theButtons is thePressed then return i",
+    @"-e", @"end repeat",
+    @"-e", @"return 0",
+    @"-e", @"end run", message
+  ]];
+  [arguments addObjectsFromArray:buttons];
+  task.arguments = arguments;
+  NSPipe *pipe = [NSPipe pipe];
+  task.standardOutput = pipe;
+  task.standardError = [NSFileHandle fileHandleWithNullDevice];
+  task.terminationHandler = ^(NSTask *finished) {
+    NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
+    NSInteger button = 0;
+    if (finished.terminationStatus == 0) {
+      NSString *output = [[NSString alloc] initWithData:data
+                                               encoding:NSASCIIStringEncoding];
+      button = [output integerValue];
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+      handler(button);
+    });
+  };
+  NSError *error = nil;
+  if (![task launchAndReturnError:&error]) {
+    LOG(ERROR) << "Failed to show a question: "
+               << error.localizedDescription.UTF8String;
+    handler(0);
+  }
+}
+
+// Mozlumi (1.3.4): the address for the exported debug logs.  It is written
+// only here (in the mail that the user's mail app opens, and in the message
+// shown when no mail app opens).
+NSString *const kMozlumiDebugLogMailAddress = @"mozlumi@curren-lumi.blog";
+NSString *const kMozlumiDebugLogMailSubject = @"Mozlumi の不具合の記録";
+
+// Kept while the mail app opens the message.
+NSSharingService *gDebugLogMailService = nil;
+
+void ShowDebugLogMailFailure(NSString *name) {
+  ShowMozlumiMessage([NSString
+      stringWithFormat:@"メールアプリを開けませんでした。\n\n"
+                       @"デスクトップに保存した「%@」を、%@ 宛ての"
+                       @"メールに添付して送ってください。",
+                       name, kMozlumiDebugLogMailAddress]);
+}
+
+// Mozlumi (1.3.4): opens a new mail to the developer in the user's mail app.
+// The mail app sends it when the user chooses to; Mozlumi itself never
+// accesses the network.
+//  - The Mac's Mail is the default mail app: the sharing service of Mail
+//    attaches the exported file.
+//  - Other mail apps: a mailto: link (address, subject and body).  A mailto:
+//    link cannot attach a file, so the body asks the user to attach the file
+//    shown in Finder.
+void ComposeDebugLogMail(NSURL *url, NSString *name) {
+  NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+  NSURL *mail_app =
+      [workspace URLForApplicationToOpenURL:[NSURL URLWithString:@"mailto:"]];
+  NSString *mail_app_id =
+      mail_app != nil ? [[NSBundle bundleWithURL:mail_app] bundleIdentifier]
+                      : nil;
+  // Mozlumi (debug mode): which mail app opens the mail.
+  mozc::renderer::WriteCandidatePositionLog(absl::StrCat(
+      "imk debug-log mail app=",
+      mail_app_id != nil ? mail_app_id.UTF8String : "none"));
+
+  if ([mail_app_id isEqualToString:@"com.apple.mail"]) {
+    NSArray *items = @[
+      @"Mozlumi の不具合の記録を送ります。\n\n"
+      @"どんなときに起きたか（アプリ・時刻・何をしていたか）：\n\n",
+      url
+    ];
+    NSSharingService *service = [NSSharingService
+        sharingServiceNamed:NSSharingServiceNameComposeEmail];
+    if (service != nil && [service canPerformWithItems:items]) {
+      service.recipients = @[ kMozlumiDebugLogMailAddress ];
+      service.subject = kMozlumiDebugLogMailSubject;
+      gDebugLogMailService = service;
+      [service performWithItems:items];
+      mozc::renderer::WriteCandidatePositionLog(
+          "imk debug-log mail via=sharing");
+      return;
+    }
+  }
+
+  if (mail_app == nil) {
+    ShowDebugLogMailFailure(name);
+    return;
+  }
+  NSString *body = [NSString
+      stringWithFormat:@"Mozlumi の不具合の記録を送ります。\r\n\r\n"
+                       @"（デスクトップに保存した「%@」を、このメールに"
+                       @"添付してください。Finder に表示しています）\r\n\r\n"
+                       @"どんなときに起きたか（アプリ・時刻・何をしていたか）："
+                       @"\r\n\r\n",
+                       name];
+  NSURLComponents *components = [[NSURLComponents alloc] init];
+  components.scheme = @"mailto";
+  components.path = kMozlumiDebugLogMailAddress;
+  components.queryItems = @[
+    [NSURLQueryItem queryItemWithName:@"subject"
+                                value:kMozlumiDebugLogMailSubject],
+    [NSURLQueryItem queryItemWithName:@"body" value:body],
+  ];
+  NSURL *link = components.URL;
+  if (link == nil || ![workspace openURL:link]) {
+    mozc::renderer::WriteCandidatePositionLog("imk debug-log mail via=none");
+    ShowDebugLogMailFailure(name);
+    return;
+  }
+  mozc::renderer::WriteCandidatePositionLog("imk debug-log mail via=mailto");
 }
 
 NSUInteger CodePointOffsetToUtf16Offset(NSString *text, uint32_t code_point_offset) {
@@ -463,6 +681,9 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 }
 
 - (void)deactivateServer:(id)sender {
+  // Mozlumi: the candidate window is hidden below. Do not let a pending
+  // position check show it again.
+  [self cancelRendererPositionRecheck];
   if (imkClientForTest_) {
     return;
   }
@@ -539,6 +760,10 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
   useZenzContextAcquisition_ =
       (useLiveConversion_ && config.use_zenz_live_correction()) ||
       config.use_ai_conversion();
+  // Mozlumi (1.3.4): the candidate position log is written only in the debug
+  // mode.  The renderer is told in the renderer command.
+  mozc::renderer::SetCandidatePositionLogEnabled(config.mozlumi_debug_log());
+  rendererCommand_.set_mozlumi_debug_log(config.mozlumi_debug_log());
 
   if (config.use_japanese_layout()) {
     // Apple does not have "Japanese" layout actually -- here sets
@@ -955,6 +1180,10 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
 
 - (void)clearCandidates {
+  [self cancelRendererPositionRecheck];
+  if (rendererCommand_.visible()) {
+    [self writeCandidatePositionLog:"imk hide"];
+  }
   hasLiveConversionAnchorLeft_ = false;
   rendererCommand_.set_type(RendererCommand::UPDATE);
   rendererCommand_.set_visible(false);
@@ -1011,43 +1240,13 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
       ->set_vertical_writing(verticalWriting_);
 }
 
-- (void)delayedUpdateCandidates {
-  if (!mozcRenderer_) {
-    return;
-  }
-
-  if (!rendererCommand_.has_output() ||
-      !ShouldDisplayRendererForOutput(rendererCommand_.output(),
-                                      useConversionStatusIndicator_)) {
-    hasLiveConversionAnchorLeft_ = false;
-    rendererCommand_.set_visible(false);
-    mozcRenderer_->ExecCommand(rendererCommand_);
-    return;
-  }
-
-  if (!HasLiveConversionReading(rendererCommand_.output())) {
-    hasLiveConversionAnchorLeft_ = false;
-  }
-
-  // The candidate window position is not recalculated if the
-  // candidate already appears on the screen.  Therefore, if a user
-  // moves client application window by mouse, candidate window won't
-  // follow the move of window.  This is done because:
-  //  - some applications like Emacs or Google Chrome don't return the
-  //    cursor position correctly.  The candidate window moves
-  //    frequently with those application, which irritates users.
-  //  - Kotoeri does this too.
-  if (!ShouldRecalculateRendererPosition(rendererCommand_,
-                                         useConversionStatusIndicator_)) {
-    // Call ExecCommand anyway to update other information like candidate words.
-    mozcRenderer_->ExecCommand(rendererCommand_);
-    return;
-  }
-
-  rendererCommand_.set_visible(true);
-
+// Asks the client application where the composition is drawn, and stores the
+// answer in the preedit rectangles of |command|.  If the application throws,
+// the rectangles may be left as they were.
+- (void)queryRendererRectangles:(RendererCommand *)command
+                         reason:(const char *)reason {
   NSRect preeditRect = NSZeroRect;
-  const Output &output = rendererCommand_.output();
+  const Output &output = command->output();
   const int32_t position = GetRendererAnchorPosition(output);
 
   // Some applications throw an exception from
@@ -1073,14 +1272,24 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
     SetRendererRectangle(
         preeditRect, NSMakePoint(candidate_left, baseline.y),
-        rendererCommand_.mutable_preedit_rectangle());
+        command->mutable_preedit_rectangle());
 
-    rendererCommand_.clear_ruby_preedit_rectangle();
+    // Mozlumi (diagnostic): what the application answered.
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk ask reason=", reason, " app=", clientBundle_,
+        " index=", position,
+        " preedit_chars=", GetPreeditCharCount(output),
+        " line=(", preeditRect.origin.x, ",", preeditRect.origin.y, ",",
+        preeditRect.size.width, ",", preeditRect.size.height, ")",
+        " baseline=(", baseline.x, ",", baseline.y, ")",
+        " rect=", FormatRendererRectangle(command->preedit_rectangle()))];
+
+    command->clear_ruby_preedit_rectangle();
 
     if (HasLiveConversionReading(output)) {
       if (position == 0) {
-        rendererCommand_.mutable_ruby_preedit_rectangle()->CopyFrom(
-            rendererCommand_.preedit_rectangle());
+        command->mutable_ruby_preedit_rectangle()->CopyFrom(
+            command->preedit_rectangle());
       } else {
         // A passive suggestion may be anchored partway through the
         // composition. Ruby represents the reading of the entire preedit and
@@ -1095,16 +1304,172 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
 
         SetRendererRectangle(
             rubyPreeditRect, rubyBaseline,
-            rendererCommand_.mutable_ruby_preedit_rectangle());
+            command->mutable_ruby_preedit_rectangle());
       }
     }
 
   } @catch (NSException *exception) {
     LOG(ERROR) << "Exception from [" << clientBundle_ << "] " << [[exception name] UTF8String]
                << "," << [[exception reason] UTF8String];
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk ask reason=", reason, " app=", clientBundle_, " failed")];
+  }
+}
+
+// Mozlumi (diagnostic): writes |message| to the candidate position log.
+// Unit tests do not write it.
+- (void)writeCandidatePositionLog:(absl::string_view)message {
+  if (imkClientForTest_) {
+    return;
+  }
+  mozc::renderer::WriteCandidatePositionLog(message);
+}
+
+- (void)cancelRendererPositionRecheck {
+  [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                           selector:@selector(recheckRendererPosition)
+                                             object:nil];
+  for (const int delay_ms : kRendererPositionProbeDelaysMs) {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(probeRendererPosition:)
+                                               object:@(delay_ms)];
+  }
+}
+
+// Mozlumi: some applications (for example chat applications built on
+// Chromium) report where the composition was before they finish moving it,
+// such as when the text field grows to two lines.  Then the candidate window
+// covers the text being typed.  A moment after the window is shown or
+// updated, ask the application again, and move the window if the
+// composition is now on another line.
+- (void)scheduleRendererPositionRecheck {
+  [self cancelRendererPositionRecheck];
+  [self performSelector:@selector(recheckRendererPosition)
+             withObject:nil
+             afterDelay:kRendererPositionRecheckDelay];
+
+  // Mozlumi (diagnostic): the questions only for the log are asked in the
+  // debug mode (1.3.4).  Unit tests count the questions to the application,
+  // so they are not asked there.
+  if (imkClientForTest_ || !mozc::renderer::IsCandidatePositionLogEnabled()) {
+    return;
+  }
+  for (const int delay_ms : kRendererPositionProbeDelaysMs) {
+    [self performSelector:@selector(probeRendererPosition:)
+               withObject:@(delay_ms)
+               afterDelay:delay_ms / 1000.0];
+  }
+}
+
+// Mozlumi (diagnostic): asks the application again only to write its answer
+// to the candidate position log.  The window is not moved.
+- (void)probeRendererPosition:(NSNumber *)delayMs {
+  if (!mozcRenderer_ || !rendererCommand_.visible() ||
+      !rendererCommand_.has_output() ||
+      !rendererCommand_.has_preedit_rectangle()) {
+    return;
   }
 
+  RendererCommand probed = rendererCommand_;
+  [self queryRendererRectangles:&probed reason:"probe"];
+  [self writeCandidatePositionLog:absl::StrCat(
+      "imk probe after_ms=", [delayMs intValue], " another_line=",
+      IsRendererRectangleOnAnotherLine(rendererCommand_.preedit_rectangle(),
+                                       probed.preedit_rectangle(),
+                                       verticalWriting_)
+          ? 1
+          : 0,
+      " shown=", FormatRendererRectangle(rendererCommand_.preedit_rectangle()))];
+}
+
+- (void)recheckRendererPosition {
+  if (!mozcRenderer_ || !rendererCommand_.visible() ||
+      !rendererCommand_.has_output() ||
+      !rendererCommand_.has_preedit_rectangle() ||
+      !ShouldDisplayRendererForOutput(rendererCommand_.output(),
+                                      useConversionStatusIndicator_)) {
+    return;
+  }
+
+  RendererCommand rechecked = rendererCommand_;
+  [self queryRendererRectangles:&rechecked reason:"recheck"];
+  if (!IsRendererRectangleOnAnotherLine(rendererCommand_.preedit_rectangle(),
+                                        rechecked.preedit_rectangle(),
+                                        verticalWriting_)) {
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk recheck moved=0 shown=",
+        FormatRendererRectangle(rendererCommand_.preedit_rectangle()))];
+    return;
+  }
+
+  [self writeCandidatePositionLog:absl::StrCat(
+      "imk recheck moved=1 from=",
+      FormatRendererRectangle(rendererCommand_.preedit_rectangle()),
+      " to=", FormatRendererRectangle(rechecked.preedit_rectangle()))];
+
+  DLOG(INFO) << "The composition moved to another line; moving the candidate window.";
+  *rendererCommand_.mutable_preedit_rectangle() = rechecked.preedit_rectangle();
+  if (rechecked.has_ruby_preedit_rectangle()) {
+    *rendererCommand_.mutable_ruby_preedit_rectangle() =
+        rechecked.ruby_preedit_rectangle();
+  } else {
+    rendererCommand_.clear_ruby_preedit_rectangle();
+  }
   mozcRenderer_->ExecCommand(rendererCommand_);
+}
+
+- (void)delayedUpdateCandidates {
+  [self cancelRendererPositionRecheck];
+  if (!mozcRenderer_) {
+    return;
+  }
+
+  if (!rendererCommand_.has_output() ||
+      !ShouldDisplayRendererForOutput(rendererCommand_.output(),
+                                      useConversionStatusIndicator_)) {
+    if (rendererCommand_.visible()) {
+      [self writeCandidatePositionLog:"imk hide"];
+    }
+    hasLiveConversionAnchorLeft_ = false;
+    rendererCommand_.set_visible(false);
+    mozcRenderer_->ExecCommand(rendererCommand_);
+    return;
+  }
+
+  if (!HasLiveConversionReading(rendererCommand_.output())) {
+    hasLiveConversionAnchorLeft_ = false;
+  }
+
+  // The candidate window position is not recalculated if the
+  // candidate already appears on the screen.  Therefore, if a user
+  // moves client application window by mouse, candidate window won't
+  // follow the move of window.  This is done because:
+  //  - some applications like Emacs or Google Chrome don't return the
+  //    cursor position correctly.  The candidate window moves
+  //    frequently with those application, which irritates users.
+  //  - Kotoeri does this too.
+  // Mozlumi: the window still follows the composition when it moves to
+  // another line (see recheckRendererPosition).
+  if (!ShouldRecalculateRendererPosition(rendererCommand_,
+                                         useConversionStatusIndicator_)) {
+    // Call ExecCommand anyway to update other information like candidate words.
+    // Mozlumi (diagnostic): the window stays where it is.
+    [self writeCandidatePositionLog:absl::StrCat(
+        "imk update keep app=", clientBundle_,
+        " index=", GetRendererAnchorPosition(rendererCommand_.output()),
+        " preedit_chars=", GetPreeditCharCount(rendererCommand_.output()),
+        " shown=", FormatRendererRectangle(rendererCommand_.preedit_rectangle()))];
+    mozcRenderer_->ExecCommand(rendererCommand_);
+    [self scheduleRendererPositionRecheck];
+    return;
+  }
+
+  const bool wasVisible = rendererCommand_.visible();
+  rendererCommand_.set_visible(true);
+  [self queryRendererRectangles:&rendererCommand_
+                         reason:(wasVisible ? "update" : "show")];
+  mozcRenderer_->ExecCommand(rendererCommand_);
+  [self scheduleRendererPositionRecheck];
 }
 
 - (void)updateCandidates:(const Output *)output {
@@ -1483,6 +1848,95 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
     LOG(ERROR) << "Failed to launch the updater: "
                << error.localizedDescription.UTF8String;
   }
+}
+
+- (IBAction)exportDebugLogClicked:(id)sender {
+  // Mozlumi (1.3.4): the debug mode logs are encrypted for the developer and
+  // saved on the Desktop.  The user sends the file by hand (by mail or DM);
+  // the input method itself never accesses the network.
+  NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
+  NSString *version = [info[@"CFBundleShortVersionString"] description];
+  NSString *build = [info[@"MozlumiBuild"] description];
+  if (version == nil) {
+    version = @"unknown";
+  }
+  if (build == nil) {
+    build = @"unknown";
+  }
+  const std::string header = absl::StrCat(
+      "version: ", version.UTF8String, " build ", build.UTF8String, "\n",
+      "macos: ",
+      [[NSProcessInfo processInfo] operatingSystemVersionString].UTF8String,
+      "\n", "debug_mode: ",
+      mozc::renderer::IsCandidatePositionLogEnabled() ? "on" : "off", "\n",
+      "exported: ", [[NSDate date] description].UTF8String, "\n");
+
+  std::string bundle;
+  if (!mozc::mac::BuildDebugLogBundle(mozc::SystemUtil::GetLoggingDirectory(),
+                                      header, &bundle)) {
+    ShowMozlumiMessage(
+        @"書き出す不具合の記録がありません。\n\n"
+        @"環境設定の「プライバシー」で「不具合を調べるための記録を残す"
+        @"（デバッグモード）」をオンにして、不具合が起きたあとに、"
+        @"もう一度書き出してください。");
+    return;
+  }
+
+  std::string file_content;
+  if (!mozc::mac::EncryptDebugLogBundle(mozc::mac::kMozlumiDebugPublicKey,
+                                        bundle, &file_content)) {
+    LOG(ERROR) << "Failed to encrypt the debug log";
+    ShowMozlumiMessage(@"不具合の記録を暗号化できませんでした。");
+    return;
+  }
+
+  NSURL *desktop = [[NSFileManager defaultManager]
+                       URLsForDirectory:NSDesktopDirectory
+                              inDomains:NSUserDomainMask]
+                       .firstObject;
+  if (desktop == nil) {
+    ShowMozlumiMessage(@"デスクトップのフォルダが見つかりませんでした。");
+    return;
+  }
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+  formatter.dateFormat = @"yyyyMMdd_HHmmss";
+  NSString *name =
+      [NSString stringWithFormat:@"Mozlumi_debug_log_%@.mozlumilog",
+                                 [formatter stringFromDate:[NSDate date]]];
+  NSURL *url = [desktop URLByAppendingPathComponent:name];
+  NSData *data = [NSData dataWithBytes:file_content.data()
+                                length:file_content.size()];
+  NSError *error = nil;
+  if (![data writeToURL:url options:NSDataWritingAtomic error:&error]) {
+    LOG(ERROR) << "Failed to save the debug log: "
+               << error.localizedDescription.UTF8String;
+    ShowMozlumiMessage(@"不具合の記録をデスクトップに保存できませんでした。");
+    return;
+  }
+  [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ url ]];
+  NSString *const kSendByMail = @"メールで送る";
+  AskMozlumiQuestion(
+      [NSString
+          stringWithFormat:
+              @"不具合の記録を、開発者だけが読める形に暗号化して、"
+              @"デスクトップに保存しました。\n\n%@\n\n"
+              @"入力した文字そのものは入っていません"
+              @"（使ったアプリの名前は入っています）。\n\n"
+              @"「メールで送る」を押すと、メールアプリで新しいメールが"
+              @"開きます（Mac の「メール」アプリでは、このファイルも"
+              @"添付されます。ほかのメールアプリでは、Finder に表示した"
+              @"このファイルをメールに添付してください）。送るかどうかは、"
+              @"メールアプリで決めてください。",
+              name],
+      @[ kSendByMail, @"OK" ], ^(NSInteger button) {
+        mozc::renderer::WriteCandidatePositionLog(
+            absl::StrCat("imk debug-log dialog button=", button));
+        // 1: the first button (kSendByMail).
+        if (button == 1) {
+          ComposeDebugLogMail(url, name);
+        }
+      });
 }
 
 + (void)setGlobalRendererReceiver:(RendererReceiver *)rendererReceiver {

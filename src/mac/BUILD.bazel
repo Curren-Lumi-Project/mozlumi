@@ -188,6 +188,36 @@ mozc_cc_test(
     ],
 )
 
+# Mozlumi (1.3.4): exports the debug mode logs, encrypted for the developer.
+mozc_objc_library(
+    name = "debug_log_export",
+    srcs = ["debug_log_export.mm"],
+    hdrs = [
+        "debug_log_export.h",
+        "mozlumi_debug_public_key.h",
+    ],
+    sdk_frameworks = [
+        "Foundation",
+        "Security",
+    ],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+mozc_objc_test(
+    name = "debug_log_export_test",
+    size = "small",
+    srcs = ["debug_log_export_test.mm"],
+    deps = [
+        ":debug_log_export",
+        "//testing:gunit_main_objc",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 mozc_objc_library(
     name = "mozc_imk_input_controller",
     srcs = ["mozc_imk_input_controller.mm"],
@@ -204,11 +234,13 @@ mozc_objc_library(
     tags = ["manual"],
     deps = [
         ":common",
+        ":debug_log_export",
         ":keycode_map",
         ":renderer_receiver",
         ":zenz_context_acquisition",
         "//base:const",
         "//base:process",
+        "//base:system_util",
         "//base:util",
         "//base/mac:mac_process",
         "//base/mac:mac_util",
@@ -219,6 +251,7 @@ mozc_objc_library(
         "//protocol:commands_cc_proto",
         "//protocol:config_cc_proto",
         "//protocol:renderer_cc_proto",
+        "//renderer:candidate_position_log",
         "//renderer:renderer_client",
         "//renderer:renderer_interface",
         "@com_google_absl//absl/log",

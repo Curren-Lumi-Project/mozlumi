@@ -143,6 +143,9 @@ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
   // Mozlumi: "wait a little for the AI before a commit"
   // (wait_ai_before_commit).
   QCheckBox *wait_ai_before_commit_checkbox_ = nullptr;
+  // Mozlumi (1.3.4): "keep the logs for finding a problem" (the debug mode,
+  // mozlumi_debug_log). macOS only; nullptr elsewhere.
+  QCheckBox *mozlumi_debug_log_checkbox_ = nullptr;
   bool initial_update_check_enabled_ = true;
   bool suppress_apply_button_update_;
   int initial_preedit_method_;

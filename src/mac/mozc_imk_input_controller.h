@@ -184,6 +184,11 @@
  * Updates..." (Mozlumi). It runs the bundled updater script. */
 - (IBAction)checkForUpdatesClicked:(id)sender;
 
+/** exportDebugLogClicked: is called when the user clicks "Export Debug
+ * Log..." (Mozlumi 1.3.4). It encrypts the debug mode logs for the developer
+ * and saves them on the Desktop. The user sends the file by hand. */
+- (IBAction)exportDebugLogClicked:(id)sender;
+
 /** Sets the ClientInterface to use in the controller.
  *
  * @param newMozcClient The client object to communicate with the Mozc server process.
@@ -215,6 +220,11 @@
 
 /** Clears all candidate data in |candidates_|. */
 - (void)clearCandidates;
+
+/** Mozlumi: asks the client application again where the composition is, and
+ * moves the candidate window if the composition has moved to another line.
+ * Called a moment after the candidate window is shown or updated. */
+- (void)recheckRendererPosition;
 
 /** Opens a link specified by the URL.
  *

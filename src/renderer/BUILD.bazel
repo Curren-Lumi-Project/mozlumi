@@ -284,6 +284,38 @@ mozc_cc_test(
     ],
 )
 
+# Mozlumi (diagnostic, Build 63): where the candidate window is placed.
+mozc_cc_library(
+    name = "candidate_position_log",
+    srcs = ["candidate_position_log.cc"],
+    hdrs = ["candidate_position_log.h"],
+    visibility = [
+        "//mac:__pkg__",
+        "//renderer:__subpackages__",
+    ],
+    deps = [
+        "//base:file_util",
+        "//base:system_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+mozc_cc_test(
+    name = "candidate_position_log_test",
+    size = "small",
+    srcs = ["candidate_position_log_test.cc"],
+    deps = [
+        ":candidate_position_log",
+        "//base:file_util",
+        "//base/file:temp_dir",
+        "//testing:gunit_main",
+        "//testing:mozctest",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
 mozc_cc_library(
     name = "renderer_interface",
     hdrs = ["renderer_interface.h"],
@@ -533,6 +565,7 @@ mozc_objc_library(
         "Foundation",
     ],
     deps = [
+        ":candidate_position_log",
         ":conversion_status_indicator",
         ":mac_candidate_interaction",
         ":mac_vertical_candidate_layout",

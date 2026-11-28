@@ -798,6 +798,14 @@ message Config {
   }
   optional AiAutoFirstStrength ai_auto_first_strength = 5007
       [default = AI_AUTO_FIRST_NORMAL];
+  // Mozlumi (1.3.4): the debug mode, for finding the cause of a problem. On:
+  // the input method and the renderer write where the candidate window is
+  // placed (candidate_position.log), and the server writes the AI decisions
+  // (zenz_debug.log), to ~/Library/Logs/Mozlumi. Only coordinates, sizes,
+  // counts, reasons and application bundle IDs are written, never the typed
+  // text. The logs can be exported, encrypted for the developer, from the
+  // input menu. macOS only. Off by default.
+  optional bool mozlumi_debug_log = 5008 [default = false];
 
   enum WindowsImeIconStyle {
     WINDOWS_IME_ICON_DEFAULT = 0;
