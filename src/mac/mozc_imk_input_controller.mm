@@ -341,12 +341,14 @@ void ShowMozlumiMessage(NSString *message) {
 }
 
 // Mozlumi (1.3.4): shows |message| with |buttons| (the last one is the
-// default) and calls |handler| on the main queue with the title of the
-// pressed button, or nil when the dialog could not be shown.  osascript runs
-// in its own process, so the input method is not blocked while the dialog is
-// open.
+// default) and calls |handler| on the main queue with the number of the
+// pressed button (1 for the first one), or 0 when the dialog could not be
+// shown.  osascript runs in its own process, so the input method is not
+// blocked while the dialog is open.  The button is returned as a number: text
+// returned by osascript started from the input method can come back in
+// another encoding (Build 65: 「メールで送る」 did not match).
 void AskMozlumiQuestion(NSString *message, NSArray<NSString *> *buttons,
-                        void (^handler)(NSString *button)) {
+                        void (^handler)(NSInteger button)) {
   NSTask *task = [[NSTask alloc] init];
   task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/osascript"];
   // argv: item 1 is the message, the rest are the buttons.
@@ -356,7 +358,11 @@ void AskMozlumiQuestion(NSString *message, NSArray<NSString *> *buttons,
     @"-e",
     @"set theResult to display dialog (item 1 of argv) with title \"Mozlumi\" "
     @"buttons theButtons default button (count of theButtons)",
-    @"-e", @"return button returned of theResult",
+    @"-e", @"set thePressed to button returned of theResult",
+    @"-e", @"repeat with i from 1 to count of theButtons",
+    @"-e", @"if item i of theButtons is thePressed then return i",
+    @"-e", @"end repeat",
+    @"-e", @"return 0",
     @"-e", @"end run", message
   ]];
   [arguments addObjectsFromArray:buttons];
@@ -366,12 +372,11 @@ void AskMozlumiQuestion(NSString *message, NSArray<NSString *> *buttons,
   task.standardError = [NSFileHandle fileHandleWithNullDevice];
   task.terminationHandler = ^(NSTask *finished) {
     NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
-    NSString *button = nil;
+    NSInteger button = 0;
     if (finished.terminationStatus == 0) {
-      button = [[[NSString alloc] initWithData:data
-                                      encoding:NSUTF8StringEncoding]
-          stringByTrimmingCharactersInSet:[NSCharacterSet
-                                              whitespaceAndNewlineCharacterSet]];
+      NSString *output = [[NSString alloc] initWithData:data
+                                               encoding:NSASCIIStringEncoding];
+      button = [output integerValue];
     }
     dispatch_async(dispatch_get_main_queue(), ^{
       handler(button);
@@ -381,40 +386,92 @@ void AskMozlumiQuestion(NSString *message, NSArray<NSString *> *buttons,
   if (![task launchAndReturnError:&error]) {
     LOG(ERROR) << "Failed to show a question: "
                << error.localizedDescription.UTF8String;
-    handler(nil);
+    handler(0);
   }
 }
 
 // Mozlumi (1.3.4): the address for the exported debug logs.  It is written
-// only here (in the mail that the user's mail app opens).
+// only here (in the mail that the user's mail app opens, and in the message
+// shown when no mail app opens).
 NSString *const kMozlumiDebugLogMailAddress = @"mozlumi@curren-lumi.blog";
+NSString *const kMozlumiDebugLogMailSubject = @"Mozlumi の不具合の記録";
 
 // Kept while the mail app opens the message.
 NSSharingService *gDebugLogMailService = nil;
 
-// Mozlumi (1.3.4): opens a new message in the user's mail app with the
-// exported debug log attached and the address filled in.  The mail app sends
-// it when the user chooses to; Mozlumi itself never accesses the network.
-void ComposeDebugLogMail(NSURL *url) {
-  NSArray *items = @[
-    @"Mozlumi の不具合の記録を送ります。\n\n"
-    @"どんなときに起きたか（アプリ・時刻・何をしていたか）：\n\n",
-    url
-  ];
-  NSSharingService *service = [NSSharingService
-      sharingServiceNamed:NSSharingServiceNameComposeEmail];
-  if (service == nil || ![service canPerformWithItems:items]) {
-    ShowMozlumiMessage([NSString
-        stringWithFormat:@"メールアプリを開けませんでした。\n\n"
-                         @"デスクトップに保存したファイルを、%@ 宛ての"
-                         @"メールに添付して送ってください。",
-                         kMozlumiDebugLogMailAddress]);
+void ShowDebugLogMailFailure(NSString *name) {
+  ShowMozlumiMessage([NSString
+      stringWithFormat:@"メールアプリを開けませんでした。\n\n"
+                       @"デスクトップに保存した「%@」を、%@ 宛ての"
+                       @"メールに添付して送ってください。",
+                       name, kMozlumiDebugLogMailAddress]);
+}
+
+// Mozlumi (1.3.4): opens a new mail to the developer in the user's mail app.
+// The mail app sends it when the user chooses to; Mozlumi itself never
+// accesses the network.
+//  - The Mac's Mail is the default mail app: the sharing service of Mail
+//    attaches the exported file.
+//  - Other mail apps: a mailto: link (address, subject and body).  A mailto:
+//    link cannot attach a file, so the body asks the user to attach the file
+//    shown in Finder.
+void ComposeDebugLogMail(NSURL *url, NSString *name) {
+  NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+  NSURL *mail_app =
+      [workspace URLForApplicationToOpenURL:[NSURL URLWithString:@"mailto:"]];
+  NSString *mail_app_id =
+      mail_app != nil ? [[NSBundle bundleWithURL:mail_app] bundleIdentifier]
+                      : nil;
+  // Mozlumi (debug mode): which mail app opens the mail.
+  mozc::renderer::WriteCandidatePositionLog(absl::StrCat(
+      "imk debug-log mail app=",
+      mail_app_id != nil ? mail_app_id.UTF8String : "none"));
+
+  if ([mail_app_id isEqualToString:@"com.apple.mail"]) {
+    NSArray *items = @[
+      @"Mozlumi の不具合の記録を送ります。\n\n"
+      @"どんなときに起きたか（アプリ・時刻・何をしていたか）：\n\n",
+      url
+    ];
+    NSSharingService *service = [NSSharingService
+        sharingServiceNamed:NSSharingServiceNameComposeEmail];
+    if (service != nil && [service canPerformWithItems:items]) {
+      service.recipients = @[ kMozlumiDebugLogMailAddress ];
+      service.subject = kMozlumiDebugLogMailSubject;
+      gDebugLogMailService = service;
+      [service performWithItems:items];
+      mozc::renderer::WriteCandidatePositionLog(
+          "imk debug-log mail via=sharing");
+      return;
+    }
+  }
+
+  if (mail_app == nil) {
+    ShowDebugLogMailFailure(name);
     return;
   }
-  service.recipients = @[ kMozlumiDebugLogMailAddress ];
-  service.subject = @"Mozlumi の不具合の記録";
-  gDebugLogMailService = service;
-  [service performWithItems:items];
+  NSString *body = [NSString
+      stringWithFormat:@"Mozlumi の不具合の記録を送ります。\r\n\r\n"
+                       @"（デスクトップに保存した「%@」を、このメールに"
+                       @"添付してください。Finder に表示しています）\r\n\r\n"
+                       @"どんなときに起きたか（アプリ・時刻・何をしていたか）："
+                       @"\r\n\r\n",
+                       name];
+  NSURLComponents *components = [[NSURLComponents alloc] init];
+  components.scheme = @"mailto";
+  components.path = kMozlumiDebugLogMailAddress;
+  components.queryItems = @[
+    [NSURLQueryItem queryItemWithName:@"subject"
+                                value:kMozlumiDebugLogMailSubject],
+    [NSURLQueryItem queryItemWithName:@"body" value:body],
+  ];
+  NSURL *link = components.URL;
+  if (link == nil || ![workspace openURL:link]) {
+    mozc::renderer::WriteCandidatePositionLog("imk debug-log mail via=none");
+    ShowDebugLogMailFailure(name);
+    return;
+  }
+  mozc::renderer::WriteCandidatePositionLog("imk debug-log mail via=mailto");
 }
 
 NSUInteger CodePointOffsetToUtf16Offset(NSString *text, uint32_t code_point_offset) {
@@ -1866,13 +1923,18 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
               @"デスクトップに保存しました。\n\n%@\n\n"
               @"入力した文字そのものは入っていません"
               @"（使ったアプリの名前は入っています）。\n\n"
-              @"「メールで送る」を押すと、このファイルを添付したメールが"
-              @"メールアプリで開きます。送るかどうかは、メールアプリで"
-              @"決めてください。",
+              @"「メールで送る」を押すと、メールアプリで新しいメールが"
+              @"開きます（Mac の「メール」アプリでは、このファイルも"
+              @"添付されます。ほかのメールアプリでは、Finder に表示した"
+              @"このファイルをメールに添付してください）。送るかどうかは、"
+              @"メールアプリで決めてください。",
               name],
-      @[ kSendByMail, @"OK" ], ^(NSString *button) {
-        if ([button isEqualToString:kSendByMail]) {
-          ComposeDebugLogMail(url);
+      @[ kSendByMail, @"OK" ], ^(NSInteger button) {
+        mozc::renderer::WriteCandidatePositionLog(
+            absl::StrCat("imk debug-log dialog button=", button));
+        // 1: the first button (kSendByMail).
+        if (button == 1) {
+          ComposeDebugLogMail(url, name);
         }
       });
 }
