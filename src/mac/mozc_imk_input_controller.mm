@@ -340,6 +340,83 @@ void ShowMozlumiMessage(NSString *message) {
   }
 }
 
+// Mozlumi (1.3.4): shows |message| with |buttons| (the last one is the
+// default) and calls |handler| on the main queue with the title of the
+// pressed button, or nil when the dialog could not be shown.  osascript runs
+// in its own process, so the input method is not blocked while the dialog is
+// open.
+void AskMozlumiQuestion(NSString *message, NSArray<NSString *> *buttons,
+                        void (^handler)(NSString *button)) {
+  NSTask *task = [[NSTask alloc] init];
+  task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/osascript"];
+  // argv: item 1 is the message, the rest are the buttons.
+  NSMutableArray<NSString *> *arguments = [NSMutableArray arrayWithArray:@[
+    @"-e", @"on run argv",
+    @"-e", @"set theButtons to items 2 thru -1 of argv",
+    @"-e",
+    @"set theResult to display dialog (item 1 of argv) with title \"Mozlumi\" "
+    @"buttons theButtons default button (count of theButtons)",
+    @"-e", @"return button returned of theResult",
+    @"-e", @"end run", message
+  ]];
+  [arguments addObjectsFromArray:buttons];
+  task.arguments = arguments;
+  NSPipe *pipe = [NSPipe pipe];
+  task.standardOutput = pipe;
+  task.standardError = [NSFileHandle fileHandleWithNullDevice];
+  task.terminationHandler = ^(NSTask *finished) {
+    NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
+    NSString *button = nil;
+    if (finished.terminationStatus == 0) {
+      button = [[[NSString alloc] initWithData:data
+                                      encoding:NSUTF8StringEncoding]
+          stringByTrimmingCharactersInSet:[NSCharacterSet
+                                              whitespaceAndNewlineCharacterSet]];
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+      handler(button);
+    });
+  };
+  NSError *error = nil;
+  if (![task launchAndReturnError:&error]) {
+    LOG(ERROR) << "Failed to show a question: "
+               << error.localizedDescription.UTF8String;
+    handler(nil);
+  }
+}
+
+// Mozlumi (1.3.4): the address for the exported debug logs.  It is written
+// only here (in the mail that the user's mail app opens).
+NSString *const kMozlumiDebugLogMailAddress = @"mozlumi@curren-lumi.blog";
+
+// Kept while the mail app opens the message.
+NSSharingService *gDebugLogMailService = nil;
+
+// Mozlumi (1.3.4): opens a new message in the user's mail app with the
+// exported debug log attached and the address filled in.  The mail app sends
+// it when the user chooses to; Mozlumi itself never accesses the network.
+void ComposeDebugLogMail(NSURL *url) {
+  NSArray *items = @[
+    @"Mozlumi の不具合の記録を送ります。\n\n"
+    @"どんなときに起きたか（アプリ・時刻・何をしていたか）：\n\n",
+    url
+  ];
+  NSSharingService *service = [NSSharingService
+      sharingServiceNamed:NSSharingServiceNameComposeEmail];
+  if (service == nil || ![service canPerformWithItems:items]) {
+    ShowMozlumiMessage([NSString
+        stringWithFormat:@"メールアプリを開けませんでした。\n\n"
+                         @"デスクトップに保存したファイルを、%@ 宛ての"
+                         @"メールに添付して送ってください。",
+                         kMozlumiDebugLogMailAddress]);
+    return;
+  }
+  service.recipients = @[ kMozlumiDebugLogMailAddress ];
+  service.subject = @"Mozlumi の不具合の記録";
+  gDebugLogMailService = service;
+  [service performWithItems:items];
+}
+
 NSUInteger CodePointOffsetToUtf16Offset(NSString *text, uint32_t code_point_offset) {
   const NSUInteger length = [text length];
   NSUInteger utf16_offset = 0;
@@ -1781,14 +1858,23 @@ NSString *TrimIncompleteZenzSurrogateEdges(NSString *text) {
     return;
   }
   [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ url ]];
-  ShowMozlumiMessage([NSString
-      stringWithFormat:
-          @"不具合の記録を、開発者だけが読める形に暗号化して、"
-          @"デスクトップに保存しました。\n\n%@\n\n"
-          @"このファイルを、メールや DM で開発者に送ってください。"
-          @"入力した文字そのものは入っていません"
-          @"（使ったアプリの名前は入っています）。",
-          name]);
+  NSString *const kSendByMail = @"メールで送る";
+  AskMozlumiQuestion(
+      [NSString
+          stringWithFormat:
+              @"不具合の記録を、開発者だけが読める形に暗号化して、"
+              @"デスクトップに保存しました。\n\n%@\n\n"
+              @"入力した文字そのものは入っていません"
+              @"（使ったアプリの名前は入っています）。\n\n"
+              @"「メールで送る」を押すと、このファイルを添付したメールが"
+              @"メールアプリで開きます。送るかどうかは、メールアプリで"
+              @"決めてください。",
+              name],
+      @[ kSendByMail, @"OK" ], ^(NSString *button) {
+        if ([button isEqualToString:kSendByMail]) {
+          ComposeDebugLogMail(url);
+        }
+      });
 }
 
 + (void)setGlobalRendererReceiver:(RendererReceiver *)rendererReceiver {
